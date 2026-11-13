@@ -13,6 +13,7 @@ extraResources:
   - from: mcp-stdio.ts
     to: mcp-stdio.ts
 linux:
+  icon: build/icon.png
   target:
     - target: AppImage
       arch:
@@ -20,6 +21,7 @@ linux:
   category: Science;Education
   artifactName: "arXivLab-${version}-x86_64.AppImage"
 win:
+  icon: build/icon.png
   target:
     - target: nsis
       arch:
@@ -34,6 +36,7 @@ nsis:
 portable:
   artifactName: "arXivLab-Portable-${version}.${ext}"
 mac:
+  icon: build/icon.png
   target:
     - dmg
   category: public.app-category.education

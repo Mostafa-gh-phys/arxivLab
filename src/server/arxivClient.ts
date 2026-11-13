@@ -1,5 +1,11 @@
 import { buildArxivQueryUrl, normalizeArxivId, parseArxivAtomFeed } from '../shared/arxiv';
-import type { ArxivPaper, ArxivSearchParams, ArxivSearchResult } from '../shared/types';
+import { buildArxivBrowseUrl, parseArxivBrowseHtml } from '../shared/arxivBrowse';
+import type {
+  ArxivBrowseParams,
+  ArxivPaper,
+  ArxivSearchParams,
+  ArxivSearchResult,
+} from '../shared/types';
 import { dnsAwareRequest, getDnsServersForTarget } from './dnsHttp';
 import {
   readCachedFullText,
@@ -34,6 +40,95 @@ export async function searchArxiv(params: ArxivSearchParams): Promise<ArxivSearc
   }
 
   return parseArxivAtomFeed(res.text(), queryUrl);
+}
+
+export async function browseArxiv(params: ArxivBrowseParams): Promise<ArxivSearchResult> {
+  const category = (params.category || 'hep-th').trim() || 'hep-th';
+  const mode = params.mode || 'new';
+  const section = params.section || 'all';
+  const maxResults = Math.min(100, Math.max(5, params.maxResults ?? 25));
+  const filterText = (params.filterText || '').trim().toLowerCase();
+
+  const requestShow = filterText || section !== 'all' ? Math.max(100, maxResults) : maxResults;
+  const queryUrl = buildArxivBrowseUrl(category, mode, requestShow);
+
+  const cfg = await readConfig();
+  const dnsServers = getDnsServersForTarget(cfg.network, 'arxiv');
+
+  const res = await dnsAwareRequest(queryUrl, {
+    method: 'GET',
+    headers: {
+      'User-Agent': USER_AGENT,
+      Accept: 'text/html,application/xhtml+xml',
+    },
+    timeoutMs: 18000,
+    dnsServers,
+  });
+
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`arXiv browse listing responded with HTTP ${res.status} ${res.statusText}`);
+  }
+
+  const parsed = parseArxivBrowseHtml(res.text(), {
+    category,
+    mode,
+    queryUrl,
+  });
+
+  let filtered = parsed.papers;
+  if (mode === 'new' && section !== 'all') {
+    filtered = filtered.filter((p) => p.listingSection === section);
+  }
+  if (filterText) {
+    filtered = filtered.filter(
+      (p) =>
+        p.title.toLowerCase().includes(filterText) ||
+        p.authors.some((a) => a.toLowerCase().includes(filterText)) ||
+        p.abstract.toLowerCase().includes(filterText) ||
+        p.id.toLowerCase().includes(filterText)
+    );
+  }
+
+  let papers = filtered.slice(0, maxResults);
+
+  // For /recent and /current listings (which omit abstracts inline), batch-enrich abstracts via Atom API
+  const missingAbstractIds = papers.filter((p) => !p.abstract).map((p) => p.id);
+  if (missingAbstractIds.length > 0) {
+    try {
+      const apiUrl = `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(
+        missingAbstractIds.join(',')
+      )}&max_results=${missingAbstractIds.length}`;
+      const apiRes = await dnsAwareRequest(apiUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept: 'application/atom+xml, application/xml, text/xml',
+        },
+        timeoutMs: 15000,
+        dnsServers,
+      });
+      if (apiRes.status >= 200 && apiRes.status < 300) {
+        const enriched = parseArxivAtomFeed(apiRes.text(), apiUrl);
+        const byId = new Map(enriched.papers.map((ep) => [ep.id, ep]));
+        papers = papers.map((p) => {
+          const match = byId.get(p.id);
+          if (!match) return p;
+          return {
+            ...match,
+            listingSection: p.listingSection,
+          };
+        });
+      }
+    } catch {
+      // Keep parsed HTML entries cleanly even if enrichment fails
+    }
+  }
+
+  return {
+    ...parsed,
+    papers,
+    itemsPerPage: papers.length,
+  };
 }
 
 export async function fetchPaperById(rawId: string): Promise<ArxivPaper | null> {

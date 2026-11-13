@@ -10,6 +10,9 @@ import {
 import { computeDateRangeFromPreset } from '../shared/arxiv';
 import {
   ARXIV_CATEGORIES,
+  type ArxivBrowseMode,
+  type ArxivBrowseParams,
+  type ArxivBrowseSection,
   type ArxivPaper,
   type ArxivSearchField,
   type ArxivSearchResult,
@@ -34,6 +37,7 @@ interface SearchWorkspaceProps {
     sortBy: ArxivSortBy;
     maxResults: number;
   }) => Promise<void>;
+  onRunBrowse: (params: ArxivBrowseParams) => Promise<void>;
   onSavePaper: (paper: ArxivPaper) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
 }
@@ -59,9 +63,13 @@ export function SearchWorkspace({
   selectedPaper,
   onSelectPaper,
   onRunSearch,
+  onRunBrowse,
   onSavePaper,
   onSyncZotero,
 }: SearchWorkspaceProps) {
+  const [queryMode, setQueryMode] = useState<'search' | 'browse'>('search');
+  const [browseMode, setBrowseMode] = useState<ArxivBrowseMode>('new');
+  const [browseSection, setBrowseSection] = useState<ArxivBrowseSection>('all');
   const [query, setQuery] = useState('');
   const [field, setField] = useState<ArxivSearchField>('all');
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['hep-th']);
@@ -72,7 +80,28 @@ export function SearchWorkspace({
   const [sortBy, setSortBy] = useState<ArxivSortBy>('submittedDate');
   const [maxResults, setMaxResults] = useState(15);
 
+  const activeBrowseCategory = selectedCategories[0] || 'hep-th';
+
+  const triggerBrowse = async (
+    nextBrowseMode: ArxivBrowseMode = browseMode,
+    nextSection: ArxivBrowseSection = browseSection,
+    nextCategory: string = activeBrowseCategory
+  ) => {
+    await onRunBrowse({
+      category: nextCategory,
+      mode: nextBrowseMode,
+      section: nextSection,
+      filterText: query,
+      maxResults,
+    });
+  };
+
   const toggleCategory = (code: string) => {
+    if (queryMode === 'browse') {
+      setSelectedCategories([code]);
+      void triggerBrowse(browseMode, browseSection, code);
+      return;
+    }
     setSelectedCategories((prev) =>
       prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
     );
@@ -81,6 +110,12 @@ export function SearchWorkspace({
   const handleAddCustomCategory = () => {
     const trimmed = customCategory.trim();
     if (!trimmed) return;
+    if (queryMode === 'browse') {
+      setSelectedCategories([trimmed]);
+      setCustomCategory('');
+      void triggerBrowse(browseMode, browseSection, trimmed);
+      return;
+    }
     if (!selectedCategories.includes(trimmed)) {
       setSelectedCategories((prev) => [...prev, trimmed]);
     }
@@ -94,8 +129,29 @@ export function SearchWorkspace({
     setDateTo(range.dateTo);
   };
 
+  const handleModeSwitch = (nextMode: 'search' | 'browse') => {
+    setQueryMode(nextMode);
+    if (nextMode === 'browse') {
+      const cat = selectedCategories[0] || 'hep-th';
+      if (selectedCategories.length === 0) {
+        setSelectedCategories([cat]);
+      }
+      void onRunBrowse({
+        category: cat,
+        mode: browseMode,
+        section: browseSection,
+        filterText: query,
+        maxResults,
+      });
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (queryMode === 'browse') {
+      await triggerBrowse();
+      return;
+    }
     await onRunSearch({
       query,
       field,
@@ -108,6 +164,9 @@ export function SearchWorkspace({
   };
 
   const handleReset = () => {
+    setQueryMode('search');
+    setBrowseMode('new');
+    setBrowseSection('all');
     setQuery('');
     setField('all');
     setSelectedCategories(['hep-th']);
@@ -135,60 +194,175 @@ export function SearchWorkspace({
         </div>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-5">
+          {/* Mode Switch: API Search vs Direct Mailing Browse */}
+          <div
+            role="group"
+            aria-label="arXiv query mode"
+            className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1"
+          >
+            <button
+              type="button"
+              onClick={() => handleModeSwitch('search')}
+              aria-pressed={queryMode === 'search'}
+              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
+                queryMode === 'search'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Search
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeSwitch('browse')}
+              aria-pressed={queryMode === 'browse'}
+              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
+                queryMode === 'browse'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Browse Mailings
+            </button>
+          </div>
+
+          {queryMode === 'browse' && (
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <div>
+                <span className="block text-xs font-medium text-slate-700">
+                  arXiv Browse Listing
+                </span>
+                <div className="mt-1.5 grid grid-cols-3 gap-1 rounded-lg bg-slate-200/70 p-1">
+                  {(
+                    [
+                      { id: 'new', label: 'New', hint: 'Most recent mailing with abstracts' },
+                      { id: 'recent', label: 'Recent', hint: 'Last 5 mailings' },
+                      { id: 'current', label: 'Current', hint: "Current month's listings" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      title={item.hint}
+                      onClick={() => {
+                        setBrowseMode(item.id);
+                        void triggerBrowse(item.id, browseSection, activeBrowseCategory);
+                      }}
+                      className={`rounded-md py-1 text-xs font-medium transition-colors ${
+                        browseMode === item.id
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  {browseMode === 'new' && 'Most recent mailing (with abstracts)'}
+                  {browseMode === 'recent' && 'Last 5 daily mailings'}
+                  {browseMode === 'current' && "Current month's archive listings"}
+                </p>
+              </div>
+
+              {browseMode === 'new' && (
+                <div>
+                  <span className="block text-[11px] font-medium text-slate-600">
+                    Mailing Section
+                  </span>
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    {(
+                      [
+                        { id: 'all', label: 'All entries' },
+                        { id: 'new', label: 'New' },
+                        { id: 'cross', label: 'Cross-lists' },
+                        { id: 'replacement', label: 'Replacements' },
+                      ] as const
+                    ).map((sec) => (
+                      <button
+                        key={sec.id}
+                        type="button"
+                        onClick={() => {
+                          setBrowseSection(sec.id);
+                          void triggerBrowse(browseMode, sec.id, activeBrowseCategory);
+                        }}
+                        className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                          browseSection === sec.id
+                            ? 'border-blue-700 bg-blue-50 text-blue-800'
+                            : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {sec.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Keyword & Target Field */}
           <div className="space-y-2">
             <label htmlFor="search-keyword" className="block text-xs font-medium text-slate-700">
-              Keywords or arXiv ID
+              {queryMode === 'browse' ? 'Filter listing (optional)' : 'Keywords or arXiv ID'}
             </label>
             <input
               id="search-keyword"
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. holographic entropy, 2401.12345"
+              placeholder={
+                queryMode === 'browse'
+                  ? 'Filter by title, author, or ID...'
+                  : 'e.g. holographic entropy, 2401.12345'
+              }
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none"
             />
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label htmlFor="search-field" className="block text-[11px] text-slate-500">
-                  Target Field
-                </label>
-                <select
-                  id="search-field"
-                  value={field}
-                  onChange={(e) => setField(e.target.value as ArxivSearchField)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-700 focus:outline-none"
-                >
-                  <option value="all">All fields</option>
-                  <option value="ti">Title</option>
-                  <option value="au">Author</option>
-                  <option value="abs">Abstract</option>
-                  <option value="id">arXiv ID</option>
-                </select>
+            {queryMode === 'search' && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="search-field" className="block text-[11px] text-slate-500">
+                    Target Field
+                  </label>
+                  <select
+                    id="search-field"
+                    value={field}
+                    onChange={(e) => setField(e.target.value as ArxivSearchField)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-700 focus:outline-none"
+                  >
+                    <option value="all">All fields</option>
+                    <option value="ti">Title</option>
+                    <option value="au">Author</option>
+                    <option value="abs">Abstract</option>
+                    <option value="id">arXiv ID</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="search-sort" className="block text-[11px] text-slate-500">
+                    Sort Order
+                  </label>
+                  <select
+                    id="search-sort"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as ArxivSortBy)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-700 focus:outline-none"
+                  >
+                    <option value="submittedDate">Submitted Date</option>
+                    <option value="lastUpdatedDate">Last Updated</option>
+                    <option value="relevance">Relevance</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label htmlFor="search-sort" className="block text-[11px] text-slate-500">
-                  Sort Order
-                </label>
-                <select
-                  id="search-sort"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as ArxivSortBy)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-700 focus:outline-none"
-                >
-                  <option value="submittedDate">Submitted Date</option>
-                  <option value="lastUpdatedDate">Last Updated</option>
-                  <option value="relevance">Relevance</option>
-                </select>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* arXiv Category Filter */}
           <div className="space-y-2 border-t border-slate-100 pt-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-700">arXiv Categories</span>
-              {selectedCategories.length > 0 && (
+              <span className="text-xs font-medium text-slate-700">
+                {queryMode === 'browse' ? 'Archive Category' : 'arXiv Categories'}
+              </span>
+              {queryMode === 'search' && selectedCategories.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setSelectedCategories([])}
@@ -244,8 +418,13 @@ export function SearchWorkspace({
                 value={customCategory}
                 onChange={(e) => {
                   const val = e.target.value;
-                  if (val && !selectedCategories.includes(val)) {
-                    setSelectedCategories((prev) => [...prev, val]);
+                  if (val) {
+                    if (queryMode === 'browse') {
+                      setSelectedCategories([val]);
+                      void triggerBrowse(browseMode, browseSection, val);
+                    } else if (!selectedCategories.includes(val)) {
+                      setSelectedCategories((prev) => [...prev, val]);
+                    }
                   }
                   setCustomCategory('');
                 }}
@@ -275,65 +454,67 @@ export function SearchWorkspace({
             </div>
           </div>
 
-          {/* Date Range Filter */}
-          <div className="space-y-2 border-t border-slate-100 pt-4">
-            <span className="block text-xs font-medium text-slate-700">Submission Date</span>
-            <div className="grid grid-cols-4 gap-1 rounded-lg bg-slate-100 p-1">
-              {(
-                [
-                  { id: 'any', label: 'Any' },
-                  { id: '7d', label: '7d' },
-                  { id: '30d', label: '30d' },
-                  { id: '1y', label: '1y' },
-                ] as const
-              ).map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => handlePresetClick(preset.id)}
-                  className={`rounded-md py-1 text-xs font-medium transition-colors ${
-                    datePreset === preset.id
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label htmlFor="date-from" className="block text-[11px] text-slate-500">
-                  From
-                </label>
-                <input
-                  id="date-from"
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => {
-                    setDatePreset('custom');
-                    setDateFrom(e.target.value);
-                  }}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-[11px] text-slate-800 tabular-nums focus:border-blue-700 focus:outline-none"
-                />
+          {/* Date Range Filter (Search mode only) */}
+          {queryMode === 'search' && (
+            <div className="space-y-2 border-t border-slate-100 pt-4">
+              <span className="block text-xs font-medium text-slate-700">Submission Date</span>
+              <div className="grid grid-cols-4 gap-1 rounded-lg bg-slate-100 p-1">
+                {(
+                  [
+                    { id: 'any', label: 'Any' },
+                    { id: '7d', label: '7d' },
+                    { id: '30d', label: '30d' },
+                    { id: '1y', label: '1y' },
+                  ] as const
+                ).map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handlePresetClick(preset.id)}
+                    className={`rounded-md py-1 text-xs font-medium transition-colors ${
+                      datePreset === preset.id
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label htmlFor="date-to" className="block text-[11px] text-slate-500">
-                  To
-                </label>
-                <input
-                  id="date-to"
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => {
-                    setDatePreset('custom');
-                    setDateTo(e.target.value);
-                  }}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-[11px] text-slate-800 tabular-nums focus:border-blue-700 focus:outline-none"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="date-from" className="block text-[11px] text-slate-500">
+                    From
+                  </label>
+                  <input
+                    id="date-from"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => {
+                      setDatePreset('custom');
+                      setDateFrom(e.target.value);
+                    }}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-[11px] text-slate-800 tabular-nums focus:border-blue-700 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="date-to" className="block text-[11px] text-slate-500">
+                    To
+                  </label>
+                  <input
+                    id="date-to"
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => {
+                      setDatePreset('custom');
+                      setDateTo(e.target.value);
+                    }}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-[11px] text-slate-800 tabular-nums focus:border-blue-700 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="flex items-center justify-between border-t border-slate-100 pt-4">
             <label htmlFor="max-results" className="text-xs text-slate-600">
@@ -349,6 +530,7 @@ export function SearchWorkspace({
               <option value={15}>15</option>
               <option value={25}>25</option>
               <option value={40}>40</option>
+              <option value={75}>75</option>
             </select>
           </div>
 
@@ -362,7 +544,13 @@ export function SearchWorkspace({
             ) : (
               <Search className="h-4 w-4" aria-hidden="true" />
             )}
-            <span>{loading ? 'Querying arxiv.org...' : 'Search arXiv'}</span>
+            <span>
+              {loading
+                ? 'Querying arxiv.org...'
+                : queryMode === 'browse'
+                  ? `Browse /${activeBrowseCategory}/${browseMode}`
+                  : 'Search arXiv'}
+            </span>
           </button>
         </form>
       </aside>
@@ -371,11 +559,18 @@ export function SearchWorkspace({
       <section aria-label="arXiv search results" className="min-w-0 flex-1 rounded-xl border border-black/[0.08] bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-5 py-3.5">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Results</h2>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {searchResult?.browseMeta
+                ? `Browse: /list/${searchResult.browseMeta.category}/${searchResult.browseMeta.mode}`
+                : 'Results'}
+            </h2>
             {searchResult && (
               <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
                 Showing {searchResult.papers.length} of{' '}
                 {searchResult.totalResults.toLocaleString()} indexed entries
+                {searchResult.browseMeta?.mailingLabel
+                  ? ` · ${searchResult.browseMeta.mailingLabel}`
+                  : ''}
               </p>
             )}
           </div>
@@ -432,6 +627,16 @@ export function SearchWorkspace({
                         <span className="font-semibold text-blue-700">
                           {paper.primaryCategory}
                         </span>
+                        {paper.listingSection && (
+                          <span>
+                            ·{' '}
+                            {paper.listingSection === 'new'
+                              ? 'New'
+                              : paper.listingSection === 'cross'
+                                ? 'Cross-list'
+                                : 'Replacement'}
+                          </span>
+                        )}
                         {paper.categories.length > 1 && (
                           <span>
                             · {paper.categories.filter((c) => c !== paper.primaryCategory).slice(0, 2).join(' · ')}

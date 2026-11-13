@@ -7,6 +7,7 @@ import { SettingsView } from './components/SettingsView';
 import { TopBar, type WorkspaceTab } from './components/TopBar';
 import { ZoteroView } from './components/ZoteroView';
 import type {
+  ArxivBrowseParams,
   ArxivPaper,
   ArxivSearchField,
   ArxivSearchResult,
@@ -78,6 +79,30 @@ export default function App() {
     },
     []
   );
+
+  const runBrowse = useCallback(async (params: ArxivBrowseParams) => {
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const res = await fetch('/api/arxiv/browse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'arXiv mailing browse failed.');
+      }
+      setSearchResult(data as ArxivSearchResult);
+      if (data.papers?.length > 0 && window.innerWidth >= 1280) {
+        setSelectedPaper((curr) => curr || data.papers[0]);
+      }
+    } catch (err: unknown) {
+      setSearchError((err as Error).message);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadLibrary().catch(() => {});
@@ -189,6 +214,7 @@ export default function App() {
             selectedPaper={selectedPaper}
             onSelectPaper={setSelectedPaper}
             onRunSearch={runSearch}
+            onRunBrowse={runBrowse}
             onSavePaper={handleSavePaper}
             onSyncZotero={handleSyncZotero}
           />

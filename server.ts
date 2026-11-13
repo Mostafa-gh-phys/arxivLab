@@ -7,6 +7,8 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { normalizeArxivId } from './src/shared/arxiv';
 import { papersToBibtexCollection, papersToRisCollection } from './src/shared/citations';
 import type {
+  ArxivBrowseMode,
+  ArxivBrowseSection,
   ArxivPaper,
   ArxivSearchField,
   ArxivSortBy,
@@ -16,6 +18,7 @@ import type {
   ZoteroConfig,
 } from './src/shared/types';
 import {
+  browseArxiv,
   downloadPaperPdf,
   fetchPaperById,
   fetchPaperReadableContent,
@@ -107,6 +110,31 @@ async function startServer(): Promise<void> {
     } catch (err: unknown) {
       res.status(502).json({
         error: `Unable to reach arxiv.org: ${(err as Error).message}`,
+      });
+    }
+  });
+
+  // Direct arXiv.org Browse Listings (new / recent / current month)
+  app.post('/api/arxiv/browse', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const mode: ArxivBrowseMode =
+        body.mode === 'recent' || body.mode === 'current' ? body.mode : 'new';
+      const section: ArxivBrowseSection =
+        body.section === 'new' || body.section === 'cross' || body.section === 'replacement'
+          ? body.section
+          : 'all';
+      const result = await browseArxiv({
+        category: typeof body.category === 'string' && body.category.trim() ? body.category.trim() : 'hep-th',
+        mode,
+        section,
+        filterText: typeof body.filterText === 'string' ? body.filterText : '',
+        maxResults: typeof body.maxResults === 'number' ? body.maxResults : 25,
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(502).json({
+        error: `Unable to load arXiv browse listings: ${(err as Error).message}`,
       });
     }
   });

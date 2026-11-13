@@ -14,6 +14,7 @@ export interface ArxivPaper {
   doi?: string;
   journalRef?: string;
   comment?: string;
+  listingSection?: 'new' | 'cross' | 'replacement';
 }
 
 export interface SavedPaper extends ArxivPaper {
@@ -44,6 +45,17 @@ export interface ArxivSearchParams {
   maxResults?: number;
 }
 
+export type ArxivBrowseMode = 'new' | 'recent' | 'current';
+export type ArxivBrowseSection = 'all' | 'new' | 'cross' | 'replacement';
+
+export interface ArxivBrowseParams {
+  category: string;
+  mode: ArxivBrowseMode;
+  section?: ArxivBrowseSection;
+  filterText?: string;
+  maxResults?: number;
+}
+
 export interface ArxivSearchResult {
   papers: ArxivPaper[];
   totalResults: number;
@@ -51,6 +63,11 @@ export interface ArxivSearchResult {
   itemsPerPage: number;
   queryUrl: string;
   fetchedAt: string;
+  browseMeta?: {
+    mode: ArxivBrowseMode;
+    category: string;
+    mailingLabel?: string;
+  };
 }
 
 export type ZoteroConnectionMode = 'web_api' | 'local_desktop';

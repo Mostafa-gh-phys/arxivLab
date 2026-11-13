@@ -67,6 +67,7 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: 'arXivLab',
+    icon: path.join(__dirname, 'icon.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     autoHideMenuBar: true,
     backgroundColor: '#f5f5f7',

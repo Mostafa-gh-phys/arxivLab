@@ -1,5 +1,6 @@
 node_modules/
-build/
+build/*
+!build/icon.png
 dist/
 coverage/
 .DS_Store
@@ -9,3 +10,4 @@ coverage/
 .arxiv-mcp-data/
 dist-electron/
 release/
+.playwright-cli/

@@ -1,4 +1,5 @@
 import { Plus } from 'lucide-react';
+import { AppLogo } from './AppLogo';
 
 export type WorkspaceTab = 'search' | 'library' | 'zotero' | 'mcp' | 'settings';
 
@@ -32,9 +33,10 @@ export function TopBar({
             e.preventDefault();
             onSelectTab('search');
           }}
-          className="text-base font-semibold tracking-tight text-slate-900 whitespace-nowrap shrink-0 sm:text-[17px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          className="inline-flex items-center gap-2 text-base font-semibold tracking-tight text-slate-900 whitespace-nowrap shrink-0 sm:text-[17px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
         >
-          arXivLab
+          <AppLogo size={24} className="shrink-0 sm:h-[26px] sm:w-[26px]" />
+          <span>arXivLab</span>
         </a>
 
         <nav
