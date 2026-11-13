@@ -27,10 +27,12 @@ win:
     - target: portable
       arch:
         - x64
-  artifactName: "arXivLab-${version}-${target}.${ext}"
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  artifactName: "arXivLab-Setup-${version}.${ext}"
+portable:
+  artifactName: "arXivLab-Portable-${version}.${ext}"
 mac:
   target:
     - dmg
