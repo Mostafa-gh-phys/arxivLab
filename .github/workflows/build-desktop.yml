@@ -3,8 +3,14 @@ name: Build Desktop Installers (Linux AppImage & Windows EXE)
 on:
   workflow_dispatch:
     inputs:
+      publish_release:
+        description: 'Publish installers to the GitHub Releases page'
+        type: boolean
+        required: false
+        default: true
       release_tag:
-        description: 'Optional GitHub Release tag (e.g. v1.0.0) to publish installers on the main repo Releases page'
+        description: 'Release tag (leave blank to use v<version> from package.json, e.g. v1.0.0)'
+        type: string
         required: false
         default: ''
   push:
@@ -49,7 +55,7 @@ jobs:
 
   publish-release:
     needs: [build-linux, build-windows]
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    if: success() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release != false))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -64,13 +70,31 @@ jobs:
           TAG_INPUT: ${{ inputs.release_tag }}
           REF_NAME: ${{ github.ref_name }}
           EVENT_NAME: ${{ github.event_name }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
-          TAG="$REF_NAME"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$TAG_INPUT" ]; then
-            TAG="$TAG_INPUT"
+          set -euo pipefail
+          ls -lh release-artifacts/
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            CLEAN_INPUT="$(echo "$TAG_INPUT" | xargs)"
+            if [ -n "$CLEAN_INPUT" ]; then
+              TAG="$CLEAN_INPUT"
+            else
+              PKG_VERSION="$(node -p "require('./package.json').version")"
+              TAG="v${PKG_VERSION}"
+            fi
+          else
+            TAG="$REF_NAME"
           fi
+
+          echo "Publishing GitHub Release for tag: $TAG"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release-artifacts/* --clobber
+            gh release edit "$TAG" --latest
           else
-            gh release create "$TAG" release-artifacts/* --title "arXivLab $TAG" --generate-notes
+            gh release create "$TAG" release-artifacts/* \
+              --target "$TARGET_SHA" \
+              --title "arXivLab $TAG" \
+              --generate-notes \
+              --latest
           fi
