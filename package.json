@@ -14,9 +14,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist dist-electron server.js release",
     "lint": "tsc --noEmit",
-    "dist:linux": "npm run build && npm run build:server && npx --yes electron-builder --linux AppImage",
-    "dist:win": "npm run build && npm run build:server && npx --yes electron-builder --win nsis portable",
-    "dist:desktop": "npm run build && npm run build:server && npx --yes electron-builder --linux AppImage --win nsis portable"
+    "dist:linux": "npm run build && npm run build:server && npx --yes electron-builder --linux AppImage --publish never",
+    "dist:win": "npm run build && npm run build:server && npx --yes electron-builder --win nsis portable --publish never",
+    "dist:desktop": "npm run build && npm run build:server && npx --yes electron-builder --linux AppImage --win nsis portable --publish never"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

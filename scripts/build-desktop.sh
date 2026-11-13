@@ -15,15 +15,15 @@ TARGET="${1:-all}"
 case "$TARGET" in
   linux)
     echo "[3/3] Packaging Linux .AppImage..."
-    npx electron-builder --linux AppImage
+    npx electron-builder --linux AppImage --publish never
     ;;
   win)
     echo "[3/3] Packaging Windows .exe (NSIS + Portable)..."
-    npx electron-builder --win nsis portable
+    npx electron-builder --win nsis portable --publish never
     ;;
   all)
     echo "[3/3] Packaging Linux .AppImage and Windows .exe..."
-    npx electron-builder --linux AppImage --win nsis portable
+    npx electron-builder --linux AppImage --win nsis portable --publish never
     ;;
   *)
     echo "Usage: $0 [linux|win|all]"
