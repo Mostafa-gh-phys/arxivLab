@@ -1,0 +1,6 @@
+{
+  "name": "arXivLab",
+  "description": "Linux-ready arXiv research workstation with keyword, date, and category search, Zotero sync, and local/online MCP server for AI agents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,38 @@
+name: Build Desktop Installers (Linux AppImage & Windows EXE)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm install --no-save electron electron-builder
+      - run: npm run dist:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arxivlab-linux-appimage
+          path: release/*.AppImage
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm install --no-save electron electron-builder
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arxivlab-windows-exe
+          path: release/*.exe

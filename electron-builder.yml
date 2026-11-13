@@ -1,0 +1,37 @@
+appId: org.arxivlab.workstation
+productName: arXivLab
+directories:
+  output: release
+files:
+  - electron/**/*
+  - package.json
+extraResources:
+  - from: dist
+    to: dist
+  - from: dist-electron
+    to: dist-electron
+  - from: mcp-stdio.ts
+    to: mcp-stdio.ts
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Science;Education
+  artifactName: "arXivLab-${version}-x86_64.AppImage"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  artifactName: "arXivLab-${version}-${target}.${ext}"
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target:
+    - dmg
+  category: public.app-category.education
