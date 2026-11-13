@@ -1,1 +1,4 @@
-[![Download](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=github)](https://github.com/Mostafa-gh-phys/arxivLab/releases/latest)
+## arXivLab 
+This app is built using Google Ai-studio 
+It would be great to receive your recommendation
+Email: mostafaghorbani036@gmail.com
