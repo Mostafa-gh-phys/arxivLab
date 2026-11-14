@@ -1,5 +1,5 @@
 ## arXivLab 
-This app is built using **Google AI Studio**. It would be great to receive your recommendations. \
+This app is built using **Google AI Studio**. It would be great to receive your recommendations. 
 
 **Email**🔗mostafaghorbani036@gmail.com
 
