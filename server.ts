@@ -583,7 +583,7 @@ async function startServer(): Promise<void> {
       if (Array.isArray(body.papers) && body.papers.length > 0) {
         targetPapers = body.papers as ArxivPaper[];
       } else if (Array.isArray(body.paperIds) && body.paperIds.length > 0) {
-        const idSet = new Set(body.paperIds.map((x: unknown) => normalizeArxivId(String(x))));
+        const idSet = new Set(body.paperIds.map((x: unknown) => normalizePaperId(String(x))));
         targetPapers = saved.filter((p) => idSet.has(p.id));
       } else {
         targetPapers = saved;

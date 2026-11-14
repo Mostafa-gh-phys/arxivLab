@@ -360,7 +360,7 @@ export function SettingsView() {
                 Linux AppImage (x86_64)
               </p>
               <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                Target: {desktopInfo?.targets.linuxAppImage || 'arXivLab-1.1.0-x86_64.AppImage'}
+                Target: {desktopInfo?.targets.linuxAppImage || 'arXivLab-1.1.1-x86_64.AppImage'}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -388,8 +388,8 @@ export function SettingsView() {
                 Windows Executable (.exe NSIS &amp; Portable)
               </p>
               <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                Targets: {desktopInfo?.targets.windowsExeInstaller || 'arXivLab-Setup-1.1.0.exe'} ·{' '}
-                {desktopInfo?.targets.windowsExePortable || 'arXivLab-Portable-1.1.0.exe'}
+                Targets: {desktopInfo?.targets.windowsExeInstaller || 'arXivLab-Setup-1.1.1.exe'} ·{' '}
+                {desktopInfo?.targets.windowsExePortable || 'arXivLab-Portable-1.1.1.exe'}
               </p>
             </div>
             <div className="flex items-center gap-2">
