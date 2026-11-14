@@ -1,5 +1,5 @@
 ## arXivLab 
-<img width="1500" height="913" alt="Untitled" src="https://github.com/user-attachments/assets/11ee9561-72fa-4298-9452-40fc560d8f33" />
+<img width="1000" height="600" alt="UI" src="https://github.com/user-attachments/assets/11ee9561-72fa-4298-9452-40fc560d8f33" />
 
 This app is built using **Google AI Studio**. It would be great to receive your recommendations. 
 
