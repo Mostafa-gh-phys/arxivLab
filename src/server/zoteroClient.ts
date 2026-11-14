@@ -24,6 +24,9 @@ export async function verifyZoteroConnection(config: ZoteroConfig): Promise<Zote
     try {
       const res = await dnsAwareRequest(`${base}/connector/ping`, {
         method: 'GET',
+        headers: {
+          'Zotero-Allowed-Request': 'true',
+        },
         timeoutMs: 5000,
       });
       if (res.status >= 200 && res.status < 300) {
@@ -131,26 +134,36 @@ export async function pushPapersToZotero(
   if (config.mode === 'local_desktop') {
     const base = (config.localEndpoint || 'http://127.0.0.1:23119').replace(/\/$/, '');
     try {
-      const items = papers.map((p) => ({
-        ...paperToZoteroItem(p, []),
-        id: `arxiv:${p.id}`,
-      }));
+      const items = papers.map((p) => {
+        const item = paperToZoteroItem(p, [], ['arxivlab']);
+        delete item.collections;
+        return {
+          ...item,
+          id: p.id.startsWith('inspire:') ? p.id : `arxiv:${p.id}`,
+        };
+      });
+      const sessionID = `arxivlab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const res = await dnsAwareRequest(`${base}/connector/saveItems`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Zotero-Allowed-Request': 'true',
+        },
         body: JSON.stringify({
-          uri: papers[0].absUrl,
+          sessionID,
+          uri: papers[0].absUrl || papers[0].inspireUrl || 'https://arxiv.org',
           items,
         }),
         timeoutMs: 8000,
       });
       if (res.status < 200 || res.status >= 300) {
+        const detail = res.text().trim();
         return {
           ok: false,
           syncedCount: 0,
           failedCount: papers.length,
           itemKeys: {},
-          message: `Local Zotero connector returned HTTP ${res.status}.`,
+          message: `Local Zotero connector returned HTTP ${res.status}${detail ? ` (${detail.slice(0, 160)})` : ''}. Ensure Zotero Desktop is open with an editable library/collection selected.`,
         };
       }
       const itemKeys: Record<string, string> = {};

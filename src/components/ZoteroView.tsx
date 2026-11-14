@@ -195,7 +195,7 @@ export function ZoteroView({ papers, onPapersUpdated }: ZoteroViewProps) {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Local Linux (:23119)
+            Local Desktop (:23119)
           </button>
         </div>
 
@@ -283,7 +283,7 @@ export function ZoteroView({ papers, onPapersUpdated }: ZoteroViewProps) {
                 htmlFor="zotero-local-endpoint"
                 className="block text-xs font-medium text-slate-700"
               >
-                Local Linux Zotero Connector URL
+                Local Zotero Desktop Connector URL
               </label>
               <input
                 id="zotero-local-endpoint"
@@ -293,8 +293,8 @@ export function ZoteroView({ papers, onPapersUpdated }: ZoteroViewProps) {
                 placeholder="http://127.0.0.1:23119"
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
               />
-              <p className="mt-1.5 text-[11px] text-slate-500">
-                Requires Zotero Desktop running on your Linux workstation (default port 23119).
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                Requires Zotero Desktop running on the same computer (default port 23119) with an open library/collection. If accessing arXivLab via a remote cloud URL, use Zotero Web API v3 instead.
               </p>
             </div>
           )}

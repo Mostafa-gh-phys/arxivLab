@@ -91,12 +91,22 @@ export async function dnsAwareRequest(
 
   const lookup = !isLoopback && servers.length > 0 ? createCustomLookup(servers) : undefined;
 
+  const bodyBuffer =
+    options.body !== undefined ? Buffer.from(options.body, 'utf-8') : undefined;
+  const headers: Record<string, string> = { ...(options.headers || {}) };
+  if (
+    bodyBuffer !== undefined &&
+    !Object.keys(headers).some((k) => k.toLowerCase() === 'content-length')
+  ) {
+    headers['Content-Length'] = String(bodyBuffer.byteLength);
+  }
+
   return new Promise<DnsFetchResponse>((resolve, reject) => {
     const req = transport.request(
       parsed,
       {
         method: options.method || 'GET',
-        headers: options.headers,
+        headers,
         timeout: timeoutMs,
         ...(lookup ? { lookup } : {}),
       },
@@ -120,14 +130,14 @@ export async function dnsAwareRequest(
         const chunks: Buffer[] = [];
         res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
         res.on('end', () => {
-          const bodyBuffer = Buffer.concat(chunks);
+          const responseBuffer = Buffer.concat(chunks);
           resolve({
             status,
             statusText: res.statusMessage || '',
             headers: res.headers,
-            bodyBuffer,
-            text: () => bodyBuffer.toString('utf-8'),
-            json: <T = unknown>() => JSON.parse(bodyBuffer.toString('utf-8')) as T,
+            bodyBuffer: responseBuffer,
+            text: () => responseBuffer.toString('utf-8'),
+            json: <T = unknown>() => JSON.parse(responseBuffer.toString('utf-8')) as T,
           });
         });
       }
@@ -138,8 +148,8 @@ export async function dnsAwareRequest(
     });
     req.on('error', reject);
 
-    if (options.body) {
-      req.write(options.body);
+    if (bodyBuffer !== undefined) {
+      req.write(bodyBuffer);
     }
     req.end();
   });
