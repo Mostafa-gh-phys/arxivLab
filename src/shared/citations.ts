@@ -5,6 +5,9 @@ function escapeBibtexValue(value: string): string {
 }
 
 export function buildBibtexKey(paper: ArxivPaper): string {
+  if (paper.texkey) {
+    return paper.texkey.replace(/[^a-zA-Z0-9:_-]/g, '');
+  }
   const firstAuthor = paper.authors[0] || 'unknown';
   const lastName = firstAuthor
     .trim()
@@ -22,20 +25,28 @@ export function paperToBibtex(paper: ArxivPaper): string {
   const year = (paper.published || '').slice(0, 4) || '2026';
   const monthNum = (paper.published || '').slice(5, 7);
   const authors = paper.authors.join(' and ');
+  const isInspireOnly = paper.id.startsWith('inspire:');
+  const entryType = paper.documentTypes?.includes('thesis')
+    ? 'phdthesis'
+    : paper.documentTypes?.includes('book')
+      ? 'book'
+      : 'article';
 
   const lines = [
-    `@article{${key},`,
+    `@${entryType}{${key},`,
     `  title = {${escapeBibtexValue(paper.title)}},`,
     `  author = {${escapeBibtexValue(authors)}},`,
     `  year = {${year}},`,
   ];
 
-  if (monthNum) {
+  if (monthNum && /^\d{2}$/.test(monthNum)) {
     lines.push(`  month = {${monthNum}},`);
   }
-  lines.push(`  eprint = {${paper.id}},`);
-  lines.push(`  archivePrefix = {arXiv},`);
-  lines.push(`  primaryClass = {${paper.primaryCategory}},`);
+  if (!isInspireOnly) {
+    lines.push(`  eprint = {${paper.id}},`);
+    lines.push(`  archivePrefix = {arXiv},`);
+    lines.push(`  primaryClass = {${paper.primaryCategory}},`);
+  }
   lines.push(`  url = {${paper.absUrl}},`);
 
   if (paper.doi) {
@@ -43,7 +54,7 @@ export function paperToBibtex(paper: ArxivPaper): string {
   }
   if (paper.journalRef) {
     lines.push(`  journal = {${escapeBibtexValue(paper.journalRef)}},`);
-  } else {
+  } else if (!isInspireOnly) {
     lines.push(`  journal = {arXiv preprint arXiv:${paper.id}},`);
   }
   if (paper.abstract) {
@@ -60,7 +71,10 @@ export function papersToBibtexCollection(papers: ArxivPaper[]): string {
 export function paperToRis(paper: ArxivPaper): string {
   const year = (paper.published || '').slice(0, 4);
   const dateCompact = (paper.published || '').slice(0, 10).replace(/-/g, '/');
-  const lines: string[] = ['TY  - ELEC'];
+  const isInspireOnly = paper.id.startsWith('inspire:');
+  const lines: string[] = [
+    paper.documentTypes?.includes('thesis') ? 'TY  - THES' : 'TY  - ELEC',
+  ];
   lines.push(`TI  - ${paper.title}`);
   for (const author of paper.authors) {
     lines.push(`AU  - ${author}`);
@@ -70,8 +84,8 @@ export function paperToRis(paper: ArxivPaper): string {
   lines.push(`AB  - ${paper.abstract}`);
   lines.push(`UR  - ${paper.absUrl}`);
   lines.push(`L1  - ${paper.pdfUrl}`);
-  lines.push(`DB  - arXiv`);
-  lines.push(`AN  - arXiv:${paper.id}`);
+  lines.push(`DB  - ${isInspireOnly ? 'INSPIRE-HEP' : 'arXiv'}`);
+  lines.push(`AN  - ${isInspireOnly ? paper.id : `arXiv:${paper.id}`}`);
   for (const cat of paper.categories) {
     lines.push(`KW  - ${cat}`);
   }
@@ -103,12 +117,22 @@ export function paperToZoteroItem(
   collectionKeys: string[] = [],
   extraTags: string[] = []
 ): Record<string, unknown> {
-  const tags = Array.from(new Set([...paper.categories, ...extraTags]))
+  const savedTags = 'tags' in paper && Array.isArray((paper as { tags?: unknown }).tags)
+    ? ((paper as { tags: string[] }).tags)
+    : [];
+  const tags = Array.from(new Set([...paper.categories, ...savedTags, ...extraTags]))
     .filter(Boolean)
     .map((tag) => ({ tag }));
 
+  const isInspireOnly = paper.id.startsWith('inspire:');
+  const itemType = paper.documentTypes?.includes('thesis')
+    ? 'thesis'
+    : paper.documentTypes?.includes('book')
+      ? 'book'
+      : 'preprint';
+
   return {
-    itemType: 'preprint',
+    itemType,
     title: paper.title,
     creators: paper.authors.map((name) => {
       const { firstName, lastName } = splitAuthorName(name);
@@ -119,14 +143,14 @@ export function paperToZoteroItem(
       };
     }),
     abstractNote: paper.abstract,
-    genre: 'arXiv Preprint',
-    repository: 'arXiv',
-    archiveID: `arXiv:${paper.id}`,
+    genre: paper.documentTypes?.[0] || 'arXiv Preprint',
+    repository: isInspireOnly ? 'INSPIRE-HEP' : 'arXiv',
+    archiveID: isInspireOnly ? paper.id : `arXiv:${paper.id}`,
     date: (paper.published || '').slice(0, 10),
     url: paper.absUrl,
     DOI: paper.doi || '',
     extra: [
-      `arXiv: ${paper.id}`,
+      isInspireOnly ? `INSPIRE: ${paper.inspireId || paper.id}` : `arXiv: ${paper.id}`,
       `Primary Category: ${paper.primaryCategory}`,
       paper.journalRef ? `Journal Ref: ${paper.journalRef}` : '',
       `PDF: ${paper.pdfUrl}`,

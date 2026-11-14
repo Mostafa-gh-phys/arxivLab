@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { normalizeArxivId } from '../shared/arxiv';
 import { papersToBibtexCollection, paperToBibtex } from '../shared/citations';
+import { mapInspireDocumentTypesToTags } from '../shared/inspire';
 import { getAllowedMcpTools, isMcpToolAllowed } from '../shared/mcpProtocol';
 import type { ArxivSearchField, McpActivityEntry, SavedPaper } from '../shared/types';
 import {
@@ -9,6 +10,7 @@ import {
   fetchPaperReadableContent,
   searchArxiv,
 } from './arxivClient';
+import { lookupInspireMetadataForArxiv } from './inspireClient';
 import {
   appendMcpActivity,
   readConfig,
@@ -284,12 +286,18 @@ export async function handleMcpJsonRpc(
           };
         }
 
-        const tags = Array.isArray(args.tags) ? args.tags.map(String) : [];
+        const rawTags = Array.isArray(args.tags) ? args.tags.map(String) : [];
+        const inspireMeta = await lookupInspireMetadataForArxiv(paper.id);
+        const documentTypes = inspireMeta?.documentTypes || paper.documentTypes || [];
+        const docTags = mapInspireDocumentTypesToTags(documentTypes, paper.comment);
+        const tags = Array.from(new Set([...rawTags, ...docTags]));
         const notes = typeof args.notes === 'string' ? args.notes : '';
         const readable = await fetchPaperReadableContent(paper, true);
 
         const savedEntry: SavedPaper = {
           ...paper,
+          ...(inspireMeta || {}),
+          documentTypes: documentTypes.length > 0 ? documentTypes : undefined,
           savedAt: new Date().toISOString(),
           tags,
           notes,

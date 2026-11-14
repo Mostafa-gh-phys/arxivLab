@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { formatBytes } from '../shared/network';
 import type { ArxivPaper, SavedPaper } from '../shared/types';
+import { AuthorLinkList } from './AuthorLinkList';
 import { PaperReaderPanel } from './PaperReaderPanel';
 
 interface LibraryViewProps {
@@ -19,6 +20,8 @@ interface LibraryViewProps {
   onDeletePaper: (id: string) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
   onGoToSearch: () => void;
+  onSearchAuthorInArxiv?: (authorName: string) => void;
+  onSearchAuthorInInspire?: (authorName: string) => void;
 }
 
 export function LibraryView({
@@ -29,9 +32,12 @@ export function LibraryView({
   onDeletePaper,
   onSyncZotero,
   onGoToSearch,
+  onSearchAuthorInArxiv,
+  onSearchAuthorInInspire,
 }: LibraryViewProps) {
   const [filterQuery, setFilterQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState('');
   const [draftTags, setDraftTags] = useState('');
@@ -45,11 +51,23 @@ export function LibraryView({
     return Array.from(set).sort();
   }, [papers]);
 
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of papers) {
+      for (const t of p.tags || []) {
+        set.add(t);
+      }
+    }
+    return Array.from(set).sort();
+  }, [papers]);
+
   const filtered = useMemo(() => {
     const q = filterQuery.trim().toLowerCase();
     return papers.filter((p) => {
       const catMatch = categoryFilter === 'all' || p.primaryCategory === categoryFilter;
       if (!catMatch) return false;
+      const tagMatch = tagFilter === 'all' || (p.tags || []).includes(tagFilter);
+      if (!tagMatch) return false;
       if (!q) return true;
       return (
         p.title.toLowerCase().includes(q) ||
@@ -59,7 +77,7 @@ export function LibraryView({
         p.notes.toLowerCase().includes(q)
       );
     });
-  }, [papers, filterQuery, categoryFilter]);
+  }, [papers, filterQuery, categoryFilter, tagFilter]);
 
   const startEdit = (paper: SavedPaper) => {
     setEditingId(paper.id);
@@ -142,6 +160,24 @@ export function LibraryView({
               ))}
             </select>
           </div>
+          <div>
+            <label htmlFor="library-tag-filter" className="sr-only">
+              Filter by document type or tag
+            </label>
+            <select
+              id="library-tag-filter"
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs text-slate-800 focus:border-blue-700 focus:outline-none"
+            >
+              <option value="all">All types & tags</option>
+              {availableTags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {papers.length === 0 ? (
@@ -174,7 +210,10 @@ export function LibraryView({
                         <span className="font-semibold text-blue-700">
                           {paper.primaryCategory}
                         </span>
-                        <span>· arXiv:{paper.id}</span>
+                        <span>
+                          · {paper.id.startsWith('inspire:') ? paper.id : `arXiv:${paper.id}`}
+                        </span>
+                        {paper.source === 'inspirehep' && <span>· INSPIRE-HEP</span>}
                         <span>· Saved {paper.savedAt.slice(0, 10)}</span>
                         {paper.pdfCached && (
                           <span className="text-emerald-700">
@@ -196,7 +235,15 @@ export function LibraryView({
                         {paper.title}
                       </button>
 
-                      <p className="mt-1 text-xs text-slate-600">{paper.authors.join(', ')}</p>
+                      <AuthorLinkList
+                        authors={paper.authors}
+                        authorDetails={paper.authorDetails}
+                        maxVisible={6}
+                        preferSource={paper.source || 'arxiv'}
+                        onSearchAuthorInArxiv={onSearchAuthorInArxiv}
+                        onSearchAuthorInInspire={onSearchAuthorInInspire}
+                        className="mt-1"
+                      />
 
                       {paper.tags.length > 0 && !isEditing && (
                         <p className="mt-1.5 font-mono text-[11px] text-slate-500">
@@ -327,6 +374,8 @@ export function LibraryView({
         onClose={() => onSelectPaper(null)}
         onSavePaper={async () => {}}
         onSyncZotero={onSyncZotero}
+        onSearchAuthorInArxiv={onSearchAuthorInArxiv}
+        onSearchAuthorInInspire={onSearchAuthorInInspire}
       />
     </div>
   );

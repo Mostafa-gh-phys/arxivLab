@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react';
 import { AppLogo } from './AppLogo';
 
-export type WorkspaceTab = 'search' | 'library' | 'zotero' | 'mcp' | 'settings';
+export type WorkspaceTab = 'search' | 'inspire' | 'library' | 'zotero' | 'mcp' | 'settings';
 
 interface TopBarProps {
   activeTab: WorkspaceTab;
@@ -11,7 +11,8 @@ interface TopBarProps {
 }
 
 const NAV_ITEMS: Array<{ id: WorkspaceTab; label: string }> = [
-  { id: 'search', label: 'Search' },
+  { id: 'search', label: 'arXiv' },
+  { id: 'inspire', label: 'INSPIRE-HEP' },
   { id: 'library', label: 'Library' },
   { id: 'zotero', label: 'Zotero' },
   { id: 'mcp', label: 'MCP Mode' },
@@ -26,7 +27,7 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-black/[0.08] bg-white/90 backdrop-blur-md">
-      <div className="mx-auto flex h-13 max-w-[1440px] items-center justify-between gap-2 px-3 sm:gap-8 sm:px-6">
+      <div className="mx-auto flex h-13 max-w-[1440px] items-center justify-between gap-2 px-3 sm:gap-6 sm:px-6">
         <a
           href="#top"
           onClick={(e) => {
@@ -41,7 +42,7 @@ export function TopBar({
 
         <nav
           aria-label="Primary workspace navigation"
-          className="flex items-center gap-2 sm:gap-6"
+          className="flex min-w-0 items-center gap-2 overflow-x-auto sm:gap-5"
         >
           {NAV_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
@@ -61,6 +62,10 @@ export function TopBar({
                   {item.id === 'mcp' ? (
                     <>
                       MCP<span className="hidden sm:inline"> Mode</span>
+                    </>
+                  ) : item.id === 'inspire' ? (
+                    <>
+                      INSPIRE<span className="hidden md:inline">-HEP</span>
                     </>
                   ) : (
                     item.label

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   Bookmark,
   BookmarkCheck,
@@ -19,6 +19,7 @@ import {
   type ArxivSortBy,
   type SavedPaper,
 } from '../shared/types';
+import { AuthorLinkList } from './AuthorLinkList';
 import { PaperReaderPanel } from './PaperReaderPanel';
 
 interface SearchWorkspaceProps {
@@ -40,6 +41,9 @@ interface SearchWorkspaceProps {
   onRunBrowse: (params: ArxivBrowseParams) => Promise<void>;
   onSavePaper: (paper: ArxivPaper) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
+  onSearchAuthorInInspire?: (authorName: string) => void;
+  pendingAuthorQuery?: string | null;
+  onClearPendingAuthorQuery?: () => void;
 }
 
 const FEATURED_CATEGORIES = [
@@ -66,6 +70,9 @@ export function SearchWorkspace({
   onRunBrowse,
   onSavePaper,
   onSyncZotero,
+  onSearchAuthorInInspire,
+  pendingAuthorQuery,
+  onClearPendingAuthorQuery,
 }: SearchWorkspaceProps) {
   const [queryMode, setQueryMode] = useState<'search' | 'browse'>('search');
   const [browseMode, setBrowseMode] = useState<ArxivBrowseMode>('new');
@@ -79,6 +86,24 @@ export function SearchWorkspace({
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState<ArxivSortBy>('submittedDate');
   const [maxResults, setMaxResults] = useState(15);
+
+  useEffect(() => {
+    if (pendingAuthorQuery) {
+      setQueryMode('search');
+      setQuery(pendingAuthorQuery);
+      setField('au');
+      void onRunSearch({
+        query: pendingAuthorQuery,
+        field: 'au',
+        categories: [],
+        dateFrom: '',
+        dateTo: '',
+        sortBy: 'submittedDate',
+        maxResults,
+      });
+      onClearPendingAuthorQuery?.();
+    }
+  }, [pendingAuthorQuery, onClearPendingAuthorQuery, onRunSearch, maxResults]);
 
   const activeBrowseCategory = selectedCategories[0] || 'hep-th';
 
@@ -654,12 +679,28 @@ export function SearchWorkspace({
                         {paper.title}
                       </button>
 
-                      <p className="mt-1 text-xs text-slate-600">
-                        {paper.authors.slice(0, 5).join(', ')}
-                        {paper.authors.length > 5
-                          ? ` +${paper.authors.length - 5} more`
-                          : ''}
-                      </p>
+                      <AuthorLinkList
+                        authors={paper.authors}
+                        authorDetails={paper.authorDetails}
+                        maxVisible={5}
+                        preferSource="arxiv"
+                        onSearchAuthorInArxiv={(authorName) => {
+                          setQueryMode('search');
+                          setQuery(authorName);
+                          setField('au');
+                          void onRunSearch({
+                            query: authorName,
+                            field: 'au',
+                            categories: [],
+                            dateFrom: '',
+                            dateTo: '',
+                            sortBy: 'submittedDate',
+                            maxResults,
+                          });
+                        }}
+                        onSearchAuthorInInspire={onSearchAuthorInInspire}
+                        className="mt-1"
+                      />
 
                       <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
                         {paper.abstract}
@@ -723,6 +764,21 @@ export function SearchWorkspace({
         onClose={() => onSelectPaper(null)}
         onSavePaper={onSavePaper}
         onSyncZotero={onSyncZotero}
+        onSearchAuthorInArxiv={(authorName) => {
+          setQueryMode('search');
+          setQuery(authorName);
+          setField('au');
+          void onRunSearch({
+            query: authorName,
+            field: 'au',
+            categories: [],
+            dateFrom: '',
+            dateTo: '',
+            sortBy: 'submittedDate',
+            maxResults,
+          });
+        }}
+        onSearchAuthorInInspire={onSearchAuthorInInspire}
       />
     </div>
   );

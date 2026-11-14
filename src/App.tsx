@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AddByIdModal } from './components/AddByIdModal';
+import { InspireWorkspace } from './components/InspireWorkspace';
 import { LibraryView } from './components/LibraryView';
 import { McpModeView } from './components/McpModeView';
 import { SearchWorkspace } from './components/SearchWorkspace';
@@ -12,6 +13,10 @@ import type {
   ArxivSearchField,
   ArxivSearchResult,
   ArxivSortBy,
+  InspireJobsParams,
+  InspireJobsResult,
+  InspireLiteratureParams,
+  InspireLiteratureResult,
   SavedPaper,
 } from './shared/types';
 
@@ -21,7 +26,14 @@ export default function App() {
   const [searchResult, setSearchResult] = useState<ArxivSearchResult | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [inspireLitResult, setInspireLitResult] = useState<InspireLiteratureResult | null>(null);
+  const [inspireJobsResult, setInspireJobsResult] = useState<InspireJobsResult | null>(null);
+  const [inspireLoading, setInspireLoading] = useState(false);
+  const [inspireError, setInspireError] = useState<string | null>(null);
   const [selectedPaper, setSelectedPaper] = useState<ArxivPaper | SavedPaper | null>(null);
+  const [selectedInspirePaper, setSelectedInspirePaper] = useState<ArxivPaper | SavedPaper | null>(null);
+  const [pendingArxivAuthor, setPendingArxivAuthor] = useState<string | null>(null);
+  const [pendingInspireAuthor, setPendingInspireAuthor] = useState<string | null>(null);
   const [addByIdOpen, setAddByIdOpen] = useState(false);
   const [bannerMessage, setBannerMessage] = useState<{
     type: 'ok' | 'error';
@@ -104,6 +116,51 @@ export default function App() {
     }
   }, []);
 
+  const runInspireLiterature = useCallback(async (params: InspireLiteratureParams) => {
+    setInspireLoading(true);
+    setInspireError(null);
+    try {
+      const res = await fetch('/api/inspire/literature', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'INSPIRE-HEP search failed.');
+      }
+      setInspireLitResult(data as InspireLiteratureResult);
+      if (data.papers?.length > 0 && window.innerWidth >= 1280) {
+        setSelectedInspirePaper((curr) => curr || data.papers[0]);
+      }
+    } catch (err: unknown) {
+      setInspireError((err as Error).message);
+    } finally {
+      setInspireLoading(false);
+    }
+  }, []);
+
+  const runInspireJobs = useCallback(async (params: InspireJobsParams) => {
+    setInspireLoading(true);
+    setInspireError(null);
+    try {
+      const res = await fetch('/api/inspire/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'INSPIRE-HEP Jobs search failed.');
+      }
+      setInspireJobsResult(data as InspireJobsResult);
+    } catch (err: unknown) {
+      setInspireError((err as Error).message);
+    } finally {
+      setInspireLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadLibrary().catch(() => {});
     runSearch({
@@ -116,6 +173,28 @@ export default function App() {
       maxResults: 15,
     }).catch(() => {});
   }, [loadLibrary, runSearch]);
+
+  useEffect(() => {
+    if (activeTab === 'inspire' && !inspireLitResult && !inspireLoading && !pendingInspireAuthor) {
+      runInspireLiterature({
+        query: '',
+        field: 'all',
+        subject: 'Theory-HEP',
+        sortBy: 'mostrecent',
+        size: 15,
+      }).catch(() => {});
+    }
+  }, [activeTab, inspireLitResult, inspireLoading, pendingInspireAuthor, runInspireLiterature]);
+
+  const handleSearchAuthorInArxiv = useCallback((authorName: string) => {
+    setPendingArxivAuthor(authorName);
+    setActiveTab('search');
+  }, []);
+
+  const handleSearchAuthorInInspire = useCallback((authorName: string) => {
+    setPendingInspireAuthor(authorName);
+    setActiveTab('inspire');
+  }, []);
 
   const handleSavePaper = async (paper: ArxivPaper) => {
     const res = await fetch('/api/library', {
@@ -131,11 +210,16 @@ export default function App() {
     if (Array.isArray(data.papers)) {
       setSavedPapers(data.papers);
     }
+    const label = paper.id.startsWith('inspire:') ? paper.id : `arXiv:${paper.id}`;
+    const docTagPreview =
+      Array.isArray(data.savedPaper?.tags) && data.savedPaper.tags.length > 0
+        ? ` [${data.savedPaper.tags.join(', ')}]`
+        : '';
     showNotice(
       'ok',
       data.zoteroSyncMessage
-        ? `Saved arXiv:${paper.id} · ${data.zoteroSyncMessage}`
-        : `Saved arXiv:${paper.id} to Linux library.`
+        ? `Saved ${label}${docTagPreview} · ${data.zoteroSyncMessage}`
+        : `Saved ${label}${docTagPreview} to Linux library.`
     );
   };
 
@@ -217,6 +301,28 @@ export default function App() {
             onRunBrowse={runBrowse}
             onSavePaper={handleSavePaper}
             onSyncZotero={handleSyncZotero}
+            onSearchAuthorInInspire={handleSearchAuthorInInspire}
+            pendingAuthorQuery={pendingArxivAuthor}
+            onClearPendingAuthorQuery={() => setPendingArxivAuthor(null)}
+          />
+        )}
+
+        {activeTab === 'inspire' && (
+          <InspireWorkspace
+            literatureResult={inspireLitResult}
+            jobsResult={inspireJobsResult}
+            loading={inspireLoading}
+            error={inspireError}
+            savedIds={savedIds}
+            selectedPaper={selectedInspirePaper}
+            onSelectPaper={setSelectedInspirePaper}
+            onRunLiteratureSearch={runInspireLiterature}
+            onRunJobsSearch={runInspireJobs}
+            onSavePaper={handleSavePaper}
+            onSyncZotero={handleSyncZotero}
+            onSearchAuthorInArxiv={handleSearchAuthorInArxiv}
+            pendingAuthorQuery={pendingInspireAuthor}
+            onClearPendingAuthorQuery={() => setPendingInspireAuthor(null)}
           />
         )}
 
@@ -229,6 +335,8 @@ export default function App() {
             onDeletePaper={handleDeletePaper}
             onSyncZotero={handleSyncZotero}
             onGoToSearch={() => setActiveTab('search')}
+            onSearchAuthorInArxiv={handleSearchAuthorInArxiv}
+            onSearchAuthorInInspire={handleSearchAuthorInInspire}
           />
         )}
 

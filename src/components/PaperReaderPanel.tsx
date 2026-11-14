@@ -11,7 +11,9 @@ import {
   X,
 } from 'lucide-react';
 import { paperToBibtex } from '../shared/citations';
+import { mapInspireDocumentTypesToTags } from '../shared/inspire';
 import type { ArxivPaper, SavedPaper } from '../shared/types';
+import { AuthorLinkList } from './AuthorLinkList';
 
 interface PaperReaderPanelProps {
   paper: ArxivPaper | SavedPaper | null;
@@ -19,6 +21,8 @@ interface PaperReaderPanelProps {
   onClose: () => void;
   onSavePaper: (paper: ArxivPaper) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
+  onSearchAuthorInArxiv?: (authorName: string) => void;
+  onSearchAuthorInInspire?: (authorName: string) => void;
 }
 
 export function PaperReaderPanel({
@@ -27,6 +31,8 @@ export function PaperReaderPanel({
   onClose,
   onSavePaper,
   onSyncZotero,
+  onSearchAuthorInArxiv,
+  onSearchAuthorInInspire,
 }: PaperReaderPanelProps) {
   const [fullText, setFullText] = useState<string | null>(null);
   const [fullTextSource, setFullTextSource] = useState<string | null>(null);
@@ -50,7 +56,7 @@ export function PaperReaderPanel({
 
   if (!paper) {
     return (
-      <aside className="hidden xl:flex xl:w-[430px] shrink-0 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-8 text-center">
+      <aside className="hidden xl:sticky xl:top-16 xl:flex xl:w-[430px] shrink-0 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-8 text-center">
         <FileText className="h-8 w-8 text-slate-300" aria-hidden="true" />
         <p className="mt-3 text-sm font-semibold text-slate-800">Select a paper to inspect</p>
         <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-500">
@@ -63,6 +69,11 @@ export function PaperReaderPanel({
   const handleLoadFullText = async () => {
     setActiveSubView('fulltext');
     if (fullText) return;
+    if (paper.id.startsWith('inspire:')) {
+      setFullText(paper.abstract || paper.title);
+      setFullTextSource('inspire-abstract');
+      return;
+    }
     setLoadingText(true);
     setTextError(null);
     try {
@@ -111,15 +122,17 @@ export function PaperReaderPanel({
   };
 
   const bibtexText = paperToBibtex(paper);
+  const isInspireOnly = paper.id.startsWith('inspire:');
+  const docTypeTags = mapInspireDocumentTypesToTags(paper.documentTypes, paper.comment);
 
   return (
     <aside
       aria-label={`Paper details for ${paper.title}`}
-      className="fixed top-13 bottom-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-black/[0.08] bg-white shadow-xl xl:static xl:z-auto xl:w-[440px] xl:max-w-none xl:shrink-0 xl:rounded-xl xl:border xl:shadow-none"
+      className="fixed top-13 bottom-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-black/[0.08] bg-white shadow-xl xl:sticky xl:top-16 xl:bottom-auto xl:right-auto xl:z-auto xl:max-h-[calc(100vh-5.5rem)] xl:w-[440px] xl:max-w-none xl:shrink-0 xl:rounded-xl xl:border xl:shadow-none"
     >
       <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-3.5">
         <span className="font-mono text-xs font-medium text-slate-600 tabular-nums">
-          arXiv:{paper.versionedId}
+          {isInspireOnly ? paper.id : `arXiv:${paper.versionedId}`}
         </span>
         <button
           type="button"
@@ -134,11 +147,17 @@ export function PaperReaderPanel({
       <div className="flex-1 overflow-y-auto p-5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-slate-500 tabular-nums">
           <span className="font-semibold text-blue-600">{paper.primaryCategory}</span>
+          {docTypeTags.map((tag) => (
+            <span key={tag}>· {tag}</span>
+          ))}
           {paper.categories
             .filter((c) => c !== paper.primaryCategory)
             .map((cat) => (
               <span key={cat}>· {cat}</span>
             ))}
+          {typeof paper.citationCount === 'number' && (
+            <span>· {paper.citationCount.toLocaleString()} citations</span>
+          )}
           <span>· Published {paper.published.slice(0, 10)}</span>
           {'pdfCached' in paper && paper.pdfCached && (
             <span className="text-emerald-700">· PDF cached</span>
@@ -149,9 +168,15 @@ export function PaperReaderPanel({
           {paper.title}
         </h2>
 
-        <p className="mt-2 text-xs leading-relaxed text-slate-600">
-          {paper.authors.join(', ')}
-        </p>
+        <AuthorLinkList
+          authors={paper.authors}
+          authorDetails={paper.authorDetails}
+          maxVisible={0}
+          preferSource={paper.source || 'arxiv'}
+          onSearchAuthorInArxiv={onSearchAuthorInArxiv}
+          onSearchAuthorInInspire={onSearchAuthorInInspire}
+          className="mt-2 leading-relaxed"
+        />
 
         {/* Primary Action Strip */}
         <div className="mt-4 flex flex-wrap items-center gap-2 border-y border-slate-100 py-3">
@@ -202,7 +227,7 @@ export function PaperReaderPanel({
             href={paper.pdfUrl}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Open arXiv PDF in new tab for ${paper.title}`}
+            aria-label={`Open PDF in new tab for ${paper.title}`}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 whitespace-nowrap shrink-0"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -253,7 +278,7 @@ export function PaperReaderPanel({
         {activeSubView === 'overview' && (
           <div className="mt-4 space-y-4">
             <p className="font-serif text-[15px] leading-relaxed text-slate-800">
-              {paper.abstract}
+              {paper.abstract || 'No abstract provided for this record.'}
             </p>
 
             <dl className="space-y-2 border-t border-slate-100 pt-3 text-xs">
@@ -275,19 +300,36 @@ export function PaperReaderPanel({
                   <dd className="text-right text-slate-700">{paper.comment}</dd>
                 </div>
               )}
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">arXiv Page</dt>
-                <dd>
-                  <a
-                    href={paper.absUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-blue-700 hover:underline"
-                  >
-                    {paper.absUrl}
-                  </a>
-                </dd>
-              </div>
+              {paper.inspireUrl && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">INSPIRE-HEP</dt>
+                  <dd>
+                    <a
+                      href={paper.inspireUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-blue-700 hover:underline"
+                    >
+                      {paper.inspireUrl}
+                    </a>
+                  </dd>
+                </div>
+              )}
+              {!isInspireOnly && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">arXiv Page</dt>
+                  <dd>
+                    <a
+                      href={paper.absUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-blue-700 hover:underline"
+                    >
+                      {paper.absUrl}
+                    </a>
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
         )}

@@ -9,10 +9,10 @@ on:
         required: false
         default: true
       release_tag:
-        description: 'Release tag (leave blank to use v<version> from package.json, e.g. v1.0.0)'
+        description: 'Release tag to create alongside previous releases (default: v1.1)'
         type: string
         required: false
-        default: ''
+        default: 'v1.1'
   push:
     tags:
       - 'v*'
@@ -80,8 +80,7 @@ jobs:
             if [ -n "$CLEAN_INPUT" ]; then
               TAG="$CLEAN_INPUT"
             else
-              PKG_VERSION="$(node -p "require('./package.json').version")"
-              TAG="v${PKG_VERSION}"
+              TAG="v1.1"
             fi
           else
             TAG="$REF_NAME"

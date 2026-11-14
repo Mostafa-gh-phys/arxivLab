@@ -4,8 +4,9 @@ import http from 'node:http';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { normalizeArxivId } from './src/shared/arxiv';
+import { normalizeArxivId, normalizePaperId } from './src/shared/arxiv';
 import { papersToBibtexCollection, papersToRisCollection } from './src/shared/citations';
+import { mapInspireDocumentTypesToTags } from './src/shared/inspire';
 import type {
   ArxivBrowseMode,
   ArxivBrowseSection,
@@ -13,6 +14,8 @@ import type {
   ArxivSearchField,
   ArxivSortBy,
   ArxivSortOrder,
+  InspireJobsParams,
+  InspireLiteratureParams,
   McpConfig,
   SavedPaper,
   ZoteroConfig,
@@ -24,6 +27,12 @@ import {
   fetchPaperReadableContent,
   searchArxiv,
 } from './src/server/arxivClient';
+import {
+  lookupInspireMetadataForArxiv,
+  resolveAuthorProfiles,
+  searchInspireJobs,
+  searchInspireLiterature,
+} from './src/server/inspireClient';
 import { testDnsResolution } from './src/server/dnsHttp';
 import { handleMcpJsonRpc, type JsonRpcRequest } from './src/server/mcpHandler';
 import {
@@ -139,23 +148,86 @@ async function startServer(): Promise<void> {
     }
   });
 
-  // Lookup single arXiv paper & optional HTML full-text extract
+  // Direct INSPIRE-HEP Literature Search
+  app.post('/api/inspire/literature', async (req, res) => {
+    try {
+      const body = (req.body || {}) as Partial<InspireLiteratureParams>;
+      const result = await searchInspireLiterature({
+        query: typeof body.query === 'string' ? body.query : '',
+        field: body.field || 'all',
+        documentType: typeof body.documentType === 'string' ? body.documentType : '',
+        subject: typeof body.subject === 'string' ? body.subject : '',
+        yearFrom: typeof body.yearFrom === 'string' ? body.yearFrom : '',
+        yearTo: typeof body.yearTo === 'string' ? body.yearTo : '',
+        minCitations: typeof body.minCitations === 'number' ? body.minCitations : undefined,
+        sortBy: body.sortBy || 'mostrecent',
+        size: typeof body.size === 'number' ? body.size : 15,
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(502).json({
+        error: `Unable to reach inspirehep.net: ${(err as Error).message}`,
+      });
+    }
+  });
+
+  // Direct INSPIRE-HEP Jobs Search
+  app.post('/api/inspire/jobs', async (req, res) => {
+    try {
+      const body = (req.body || {}) as Partial<InspireJobsParams>;
+      const result = await searchInspireJobs({
+        query: typeof body.query === 'string' ? body.query : '',
+        status: body.status || 'open',
+        rank: typeof body.rank === 'string' ? body.rank : '',
+        region: typeof body.region === 'string' ? body.region : '',
+        category: typeof body.category === 'string' ? body.category : '',
+        size: typeof body.size === 'number' ? body.size : 15,
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(502).json({
+        error: `Unable to reach INSPIRE-HEP Jobs API: ${(err as Error).message}`,
+      });
+    }
+  });
+
+  // Resolve author across arXiv, INSPIRE-HEP, and Google Scholar fallback
+  app.get('/api/author/resolve', async (req, res) => {
+    try {
+      const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+      const recid = typeof req.query.recid === 'string' ? req.query.recid.trim() : undefined;
+      if (!name) {
+        res.status(400).json({ error: 'Author name is required.' });
+        return;
+      }
+      const resolution = await resolveAuthorProfiles(name, recid);
+      res.json(resolution);
+    } catch (err: unknown) {
+      res.status(502).json({ error: (err as Error).message });
+    }
+  });
+
+  // Lookup single arXiv or saved INSPIRE paper & optional HTML full-text extract
   app.get('/api/arxiv/paper', async (req, res) => {
     try {
       const rawId = typeof req.query.id === 'string' ? req.query.id : '';
-      const id = normalizeArxivId(rawId);
+      const id = normalizePaperId(rawId);
       if (!id) {
-        res.status(400).json({ error: 'arXiv ID is required.' });
+        res.status(400).json({ error: 'Paper ID is required.' });
         return;
       }
-      const paper = await fetchPaperById(id);
+      const saved = await readLibrary();
+      const savedPaper = saved.find((p) => p.id === id) || null;
+      const paper = id.startsWith('inspire:') ? savedPaper : (await fetchPaperById(id)) || savedPaper;
       if (!paper) {
-        res.status(404).json({ error: `No paper found on arXiv for "${id}".` });
+        res.status(404).json({ error: `No paper found for "${id}".` });
         return;
       }
       const includeContent = req.query.content === '1' || req.query.content === 'true';
       if (includeContent) {
-        const readable = await fetchPaperReadableContent(paper, true);
+        const readable = id.startsWith('inspire:')
+          ? { source: 'abstract-only' as const, text: paper.abstract || paper.title }
+          : await fetchPaperReadableContent(paper, true);
         res.json({ paper, readable });
         return;
       }
@@ -294,9 +366,9 @@ async function startServer(): Promise<void> {
       arch: process.arch,
       projectDir: process.cwd(),
       targets: {
-        linuxAppImage: 'arXivLab-1.0.0-x86_64.AppImage',
-        windowsExeInstaller: 'arXivLab-Setup-1.0.0.exe',
-        windowsExePortable: 'arXivLab-Portable-1.0.0.exe',
+        linuxAppImage: 'arXivLab-1.1.0-x86_64.AppImage',
+        windowsExeInstaller: 'arXivLab-Setup-1.1.0.exe',
+        windowsExePortable: 'arXivLab-Portable-1.1.0.exe',
       },
       artifacts,
     });
@@ -330,10 +402,33 @@ async function startServer(): Promise<void> {
       }
       const existing = await readLibrary();
       const prev = existing.find((p) => p.id === incoming.id);
+
+      let enrichedPaper: ArxivPaper = { ...incoming };
+      if (!enrichedPaper.documentTypes?.length && !enrichedPaper.id.startsWith('inspire:')) {
+        const inspireMeta = await lookupInspireMetadataForArxiv(enrichedPaper.id);
+        if (inspireMeta) {
+          enrichedPaper = {
+            ...enrichedPaper,
+            documentTypes: inspireMeta.documentTypes,
+            inspireId: enrichedPaper.inspireId || inspireMeta.inspireId,
+            inspireUrl: enrichedPaper.inspireUrl || inspireMeta.inspireUrl,
+            citationCount: enrichedPaper.citationCount ?? inspireMeta.citationCount,
+            texkey: enrichedPaper.texkey || inspireMeta.texkey,
+          };
+        }
+      }
+
+      const docTypeTags = mapInspireDocumentTypesToTags(
+        enrichedPaper.documentTypes,
+        enrichedPaper.comment
+      );
+      const baseTags = Array.isArray(body.tags) ? body.tags.map(String) : prev?.tags || [];
+      const mergedTags = Array.from(new Set([...baseTags, ...docTypeTags])).filter(Boolean);
+
       const savedEntry: SavedPaper = {
-        ...incoming,
+        ...enrichedPaper,
         savedAt: prev?.savedAt || new Date().toISOString(),
-        tags: Array.isArray(body.tags) ? body.tags.map(String) : prev?.tags || [],
+        tags: mergedTags,
         notes: typeof body.notes === 'string' ? body.notes : prev?.notes || '',
         zoteroItemKey: prev?.zoteroItemKey,
         zoteroSyncedAt: prev?.zoteroSyncedAt,
@@ -362,7 +457,7 @@ async function startServer(): Promise<void> {
   app.patch('/api/library/update', async (req, res) => {
     try {
       const body = req.body || {};
-      const id = normalizeArxivId(String(body.id || ''));
+      const id = normalizePaperId(String(body.id || ''));
       if (!id) {
         res.status(400).json({ error: 'Paper id is required.' });
         return;
@@ -387,7 +482,7 @@ async function startServer(): Promise<void> {
 
   app.delete('/api/library', async (req, res) => {
     const rawId = typeof req.query.id === 'string' ? req.query.id : '';
-    const id = normalizeArxivId(rawId);
+    const id = normalizePaperId(rawId);
     if (!id) {
       res.status(400).json({ error: 'Paper id query parameter is required.' });
       return;

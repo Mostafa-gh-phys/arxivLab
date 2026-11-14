@@ -1,6 +1,12 @@
+export interface AuthorDetail {
+  name: string;
+  inspireRecid?: string;
+  affiliation?: string;
+}
+
 export interface ArxivPaper {
-  id: string; // Canonical ID without version, e.g. "2401.12345" or "hep-th/9711200"
-  versionedId: string; // e.g. "2401.12345v2"
+  id: string; // Canonical arXiv ID (e.g. "2401.12345") or INSPIRE key (e.g. "inspire:3227929")
+  versionedId: string; // e.g. "2401.12345v2" or "inspire:3227929"
   title: string;
   authors: string[];
   abstract: string;
@@ -15,6 +21,13 @@ export interface ArxivPaper {
   journalRef?: string;
   comment?: string;
   listingSection?: 'new' | 'cross' | 'replacement';
+  source?: 'arxiv' | 'inspirehep';
+  inspireId?: string;
+  inspireUrl?: string;
+  documentTypes?: string[];
+  citationCount?: number;
+  texkey?: string;
+  authorDetails?: AuthorDetail[];
 }
 
 export interface SavedPaper extends ArxivPaper {
@@ -68,6 +81,76 @@ export interface ArxivSearchResult {
     category: string;
     mailingLabel?: string;
   };
+}
+
+export type InspireSearchField = 'all' | 'title' | 'author' | 'abstract' | 'eprint' | 'collaboration';
+export type InspireSortBy = 'mostrecent' | 'mostcited' | 'bestmatch';
+
+export interface InspireLiteratureParams {
+  query: string;
+  field?: InspireSearchField;
+  documentType?: string;
+  subject?: string;
+  yearFrom?: string;
+  yearTo?: string;
+  minCitations?: number;
+  sortBy?: InspireSortBy;
+  size?: number;
+}
+
+export interface InspireLiteratureResult {
+  papers: ArxivPaper[];
+  totalResults: number;
+  queryUrl: string;
+  fetchedAt: string;
+}
+
+export type InspireJobStatus = 'open' | 'closed' | 'all';
+
+export interface InspireJobsParams {
+  query: string;
+  status?: InspireJobStatus;
+  rank?: string;
+  region?: string;
+  category?: string;
+  size?: number;
+}
+
+export interface InspireJob {
+  id: string;
+  position: string;
+  institutions: string[];
+  ranks: string[];
+  regions: string[];
+  status: string;
+  deadlineDate?: string;
+  categories: string[];
+  descriptionText: string;
+  urls: string[];
+  contacts: Array<{ name?: string; email?: string }>;
+  inspireUrl: string;
+  updated?: string;
+}
+
+export interface InspireJobsResult {
+  jobs: InspireJob[];
+  totalResults: number;
+  queryUrl: string;
+  fetchedAt: string;
+}
+
+export interface AuthorResolution {
+  name: string;
+  arxivUrl: string;
+  arxivPaperCount: number;
+  arxivSamplePapers: Array<{ id: string; title: string; published: string }>;
+  inspireUrl: string | null;
+  inspireRecid?: string;
+  inspireAffiliation?: string;
+  inspireOrcid?: string;
+  inspireCategories?: string[];
+  googleScholarUrl: string;
+  hasDirectPage: boolean;
 }
 
 export type ZoteroConnectionMode = 'web_api' | 'local_desktop';

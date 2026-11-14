@@ -21,6 +21,16 @@ export function normalizeArxivId(input: string): string {
   return raw.replace(/v\d+$/i, '');
 }
 
+export function normalizePaperId(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const inspireMatch = trimmed.match(/^(?:inspire:|https?:\/\/inspirehep\.net\/literature\/)(\d+)/i);
+  if (inspireMatch) {
+    return `inspire:${inspireMatch[1]}`;
+  }
+  return normalizeArxivId(trimmed);
+}
+
 export function formatArxivDateBound(dateStr: string, boundary: 'start' | 'end'): string | null {
   const clean = dateStr.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return null;

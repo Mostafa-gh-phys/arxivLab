@@ -253,9 +253,11 @@ export async function downloadPaperPdf(
   sizeBytes: number;
   cached: boolean;
 }> {
-  const id = normalizeArxivId(rawId);
+  const trimmed = rawId.trim();
+  const isInspire = /^inspire:\d+$/i.test(trimmed);
+  const id = isInspire ? trimmed.toLowerCase() : normalizeArxivId(trimmed);
   if (!id) {
-    throw new Error('Valid arXiv ID is required.');
+    throw new Error('Valid paper ID is required.');
   }
 
   const existingBuffer = await readCachedPdf(id);
@@ -271,10 +273,48 @@ export async function downloadPaperPdf(
 
   const cfg = await readConfig();
   const dnsServers = getDnsServersForTarget(cfg.network, 'arxiv');
-  const candidates = [
-    `https://arxiv.org/pdf/${id}.pdf`,
-    `https://arxiv.org/pdf/${id}`,
-  ];
+  const saved = await readLibrary();
+  const savedMatch = saved.find((p) => p.id === id);
+
+  const candidates: string[] = [];
+  if (isInspire) {
+    if (savedMatch?.pdfUrl && /^https?:\/\//i.test(savedMatch.pdfUrl)) {
+      candidates.push(savedMatch.pdfUrl);
+    }
+    const recid = id.replace(/^inspire:/, '');
+    try {
+      const metaRes = await dnsAwareRequest(
+        `https://inspirehep.net/api/literature/${encodeURIComponent(recid)}`,
+        {
+          method: 'GET',
+          headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+          timeoutMs: 12000,
+          dnsServers,
+        }
+      );
+      if (metaRes.status >= 200 && metaRes.status < 300) {
+        const json = metaRes.json<{
+          metadata?: {
+            arxiv_eprints?: Array<{ value?: string }>;
+            documents?: Array<{ url?: string }>;
+          };
+        }>();
+        const eprint = json.metadata?.arxiv_eprints?.[0]?.value;
+        if (eprint) {
+          candidates.push(`https://arxiv.org/pdf/${eprint}.pdf`);
+        }
+        for (const doc of json.metadata?.documents || []) {
+          if (doc.url && !candidates.includes(doc.url)) {
+            candidates.push(doc.url);
+          }
+        }
+      }
+    } catch {
+      // Fall through to saved candidates
+    }
+  } else {
+    candidates.push(`https://arxiv.org/pdf/${id}.pdf`, `https://arxiv.org/pdf/${id}`);
+  }
 
   let downloaded: Buffer | null = null;
   let lastError = 'PDF download failed';
