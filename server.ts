@@ -14,6 +14,7 @@ import type {
   ArxivSearchField,
   ArxivSortBy,
   ArxivSortOrder,
+  CustomCloudConfig,
   InspireJobsParams,
   InspireLiteratureParams,
   McpConfig,
@@ -26,7 +27,13 @@ import {
   fetchPaperById,
   fetchPaperReadableContent,
   searchArxiv,
+  streamPaperPdfToResponse,
 } from './src/server/arxivClient';
+import {
+  pullLibraryFromCustomCloud,
+  pushLibraryToCustomCloud,
+  testCustomCloudConnection,
+} from './src/server/cloudSync';
 import {
   lookupInspireMetadataForArxiv,
   resolveAuthorProfiles,
@@ -38,9 +45,12 @@ import { handleMcpJsonRpc, type JsonRpcRequest } from './src/server/mcpHandler';
 import {
   DATA_DIR,
   deleteSavedPaper,
+  mergeImportedLibrary,
+  readCachedPdf,
   readConfig,
   readLibrary,
   readMcpActivity,
+  sanitizeCloudConfigForClient,
   sanitizeZoteroConfigForClient,
   upsertSavedPaper,
   writeConfig,
@@ -54,8 +64,33 @@ import {
 
 dotenv.config();
 
-const PORT = Number(process.env.PORT || 3000);
+function resolveCliArg(flag: string): string | undefined {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === flag && args[i + 1] && !args[i + 1].startsWith('-')) {
+      return args[i + 1];
+    }
+    if (arg.startsWith(`${flag}=`)) {
+      return arg.slice(flag.length + 1);
+    }
+  }
+  return undefined;
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
+const cliPortRaw = resolveCliArg('--port') ?? resolveCliArg('-p');
+const cliPort = cliPortRaw ? Number(cliPortRaw) : NaN;
+const envPort = process.env.PORT ? Number(process.env.PORT) : NaN;
+const PORT =
+  Number.isFinite(cliPort) && cliPort > 0
+    ? cliPort
+    : !isProduction && envPort === 8080
+      ? 3000
+      : Number.isFinite(envPort) && envPort > 0
+        ? envPort
+        : 3000;
+const HOST = resolveCliArg('--host') || '0.0.0.0';
 
 // Active SSE sessions for MCP HTTP+SSE transport
 const sseSessions = new Map<string, Response>();
@@ -237,22 +272,24 @@ async function startServer(): Promise<void> {
     }
   });
 
-  // Direct PDF download & Linux disk cache
+  // Fast streaming PDF download & local disk cache
   app.get('/api/arxiv/download', async (req, res) => {
     try {
       const rawId = typeof req.query.id === 'string' ? req.query.id : '';
       const saveToDisk = req.query.save !== '0' && req.query.save !== 'false';
       const inlineView = req.query.view === '1' || req.query.view === 'true';
-      const pdf = await downloadPaperPdf(rawId, saveToDisk);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Length', String(pdf.sizeBytes));
-      res.setHeader(
-        'Content-Disposition',
-        `${inlineView ? 'inline' : 'attachment'}; filename="${pdf.fileName}"`
-      );
-      res.send(pdf.buffer);
+      const titleHint = typeof req.query.title === 'string' ? req.query.title : undefined;
+      await streamPaperPdfToResponse(rawId, res, {
+        saveToDisk,
+        inlineView,
+        titleHint,
+      });
     } catch (err: unknown) {
-      res.status(502).json({ error: (err as Error).message });
+      if (!res.headersSent) {
+        res.status(502).json({ error: (err as Error).message });
+      } else if (!res.writableEnded) {
+        res.end();
+      }
     }
   });
 
@@ -343,7 +380,7 @@ async function startServer(): Promise<void> {
     res.json(result);
   });
 
-  // Desktop Packaging Info (.exe / .AppImage)
+  // Desktop Packaging Info (.AppImage / .exe / .dmg / .zip)
   app.get('/api/desktop/info', async (_req, res) => {
     const releaseDir = path.resolve(process.cwd(), 'release');
     let artifacts: Array<{ name: string; sizeBytes: number }> = [];
@@ -352,7 +389,7 @@ async function startServer(): Promise<void> {
       for (const entry of entries) {
         if (
           entry.isFile() &&
-          /\.(AppImage|exe|dmg|deb)$/i.test(entry.name)
+          /\.(AppImage|exe|dmg|zip|deb)$/i.test(entry.name)
         ) {
           const st = await fs.stat(path.join(releaseDir, entry.name));
           artifacts.push({ name: entry.name, sizeBytes: st.size });
@@ -366,9 +403,11 @@ async function startServer(): Promise<void> {
       arch: process.arch,
       projectDir: process.cwd(),
       targets: {
-        linuxAppImage: 'arXivLab-1.1.0-x86_64.AppImage',
-        windowsExeInstaller: 'arXivLab-Setup-1.1.0.exe',
-        windowsExePortable: 'arXivLab-Portable-1.1.0.exe',
+        linuxAppImage: 'arXivLab-2.0.0-x86_64.AppImage',
+        windowsExeInstaller: 'arXivLab-Setup-2.0.0.exe',
+        windowsExePortable: 'arXivLab-Portable-2.0.0.exe',
+        macOsDmgArm64: 'arXivLab-2.0.0-mac-arm64.dmg',
+        macOsDmgX64: 'arXivLab-2.0.0-mac-x64.dmg',
       },
       artifacts,
     });
@@ -491,9 +530,58 @@ async function startServer(): Promise<void> {
     res.json({ papers });
   });
 
+  app.post('/api/library/import', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const incoming = Array.isArray(body.papers) ? (body.papers as SavedPaper[]) : [];
+      if (incoming.length === 0) {
+        res.status(400).json({ error: 'Provide at least one paper in the import payload.' });
+        return;
+      }
+      const result = await mergeImportedLibrary(incoming);
+      res.json({
+        ok: true,
+        added: result.added,
+        updated: result.updated,
+        papers: result.papers,
+      });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  app.get('/api/library/cached-pdf', async (req, res) => {
+    const rawId = typeof req.query.id === 'string' ? req.query.id : '';
+    const id = normalizePaperId(rawId);
+    if (!id) {
+      res.status(400).json({ error: 'Paper id is required.' });
+      return;
+    }
+    const buf = await readCachedPdf(id);
+    if (!buf) {
+      res.status(404).json({ error: 'PDF not cached locally.' });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buf);
+  });
+
   app.get('/api/library/export', async (req, res) => {
-    const format = req.query.format === 'ris' ? 'ris' : 'bibtex';
+    const format = req.query.format === 'ris' ? 'ris' : req.query.format === 'json' ? 'json' : 'bibtex';
     const papers = await readLibrary();
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="arxivlab-library.json"');
+      res.send(
+        JSON.stringify(
+          { app: 'arXivLab', version: '2.0.0', exportedAt: new Date().toISOString(), papers },
+          null,
+          2
+        )
+      );
+      return;
+    }
     if (format === 'ris') {
       res.setHeader('Content-Type', 'application/x-research-info-systems; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="arxivlab-library.ris"');
@@ -503,6 +591,113 @@ async function startServer(): Promise<void> {
     res.setHeader('Content-Type', 'application/x-bibtex; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="arxivlab-library.bib"');
     res.send(papersToBibtexCollection(papers));
+  });
+
+  // Custom Cloud Storage (WebDAV / Custom HTTP) routes
+  app.get('/api/cloud/config', async (_req, res) => {
+    const cfg = await readConfig();
+    res.json({ config: sanitizeCloudConfigForClient(cfg.cloud) });
+  });
+
+  app.put('/api/cloud/config', async (req, res) => {
+    try {
+      const body = (req.body || {}) as Partial<CustomCloudConfig>;
+      const current = await readConfig();
+      const nextSecret =
+        typeof body.passwordOrToken === 'string' && !body.passwordOrToken.includes('••••')
+          ? body.passwordOrToken
+          : current.cloud.passwordOrToken;
+      const nextCloud: CustomCloudConfig = {
+        provider: body.provider === 'custom_http' ? 'custom_http' : 'webdav',
+        endpointUrl:
+          typeof body.endpointUrl === 'string' ? body.endpointUrl.trim() : current.cloud.endpointUrl,
+        remotePath:
+          typeof body.remotePath === 'string'
+            ? body.remotePath.trim() || '/arXivLab'
+            : current.cloud.remotePath,
+        username: typeof body.username === 'string' ? body.username.trim() : current.cloud.username,
+        passwordOrToken: nextSecret,
+        includeCachedPdfs:
+          typeof body.includeCachedPdfs === 'boolean'
+            ? body.includeCachedPdfs
+            : current.cloud.includeCachedPdfs,
+        lastSyncedAt: current.cloud.lastSyncedAt,
+      };
+      await writeConfig({ ...current, cloud: nextCloud });
+      res.json({ config: sanitizeCloudConfigForClient(nextCloud) });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  app.post('/api/cloud/test', async (req, res) => {
+    const current = await readConfig();
+    const body = (req.body || {}) as Partial<CustomCloudConfig>;
+    const effective: CustomCloudConfig = {
+      ...current.cloud,
+      ...body,
+      passwordOrToken:
+        typeof body.passwordOrToken === 'string' &&
+        body.passwordOrToken.trim() &&
+        !body.passwordOrToken.includes('••••')
+          ? body.passwordOrToken
+          : current.cloud.passwordOrToken,
+    };
+    const result = await testCustomCloudConnection(effective);
+    res.status(result.ok ? 200 : 400).json(result);
+  });
+
+  app.post('/api/cloud/push', async (req, res) => {
+    try {
+      const current = await readConfig();
+      const body = (req.body || {}) as Partial<CustomCloudConfig>;
+      const effective: CustomCloudConfig = {
+        ...current.cloud,
+        ...body,
+        passwordOrToken:
+          typeof body.passwordOrToken === 'string' &&
+          body.passwordOrToken.trim() &&
+          !body.passwordOrToken.includes('••••')
+            ? body.passwordOrToken
+            : current.cloud.passwordOrToken,
+      };
+      const papers = await readLibrary();
+      const result = await pushLibraryToCustomCloud(effective, papers);
+      const updatedCloud = { ...effective, lastSyncedAt: result.syncedAt };
+      await writeConfig({ ...current, cloud: updatedCloud });
+      res.json({ ...result, config: sanitizeCloudConfigForClient(updatedCloud) });
+    } catch (err: unknown) {
+      res.status(502).json({ error: (err as Error).message });
+    }
+  });
+
+  app.post('/api/cloud/pull', async (req, res) => {
+    try {
+      const current = await readConfig();
+      const body = (req.body || {}) as Partial<CustomCloudConfig>;
+      const effective: CustomCloudConfig = {
+        ...current.cloud,
+        ...body,
+        passwordOrToken:
+          typeof body.passwordOrToken === 'string' &&
+          body.passwordOrToken.trim() &&
+          !body.passwordOrToken.includes('••••')
+            ? body.passwordOrToken
+            : current.cloud.passwordOrToken,
+      };
+      const pulled = await pullLibraryFromCustomCloud(effective);
+      const merged = await mergeImportedLibrary(pulled.papers);
+      res.json({
+        ok: true,
+        added: merged.added,
+        updated: merged.updated,
+        total: merged.papers.length,
+        syncedAt: pulled.syncedAt,
+        papers: merged.papers,
+      });
+    } catch (err: unknown) {
+      res.status(502).json({ error: (err as Error).message });
+    }
   });
 
   // Zotero integration routes
@@ -760,8 +955,13 @@ async function startServer(): Promise<void> {
     });
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`arXivLab server listening on http://0.0.0.0:${PORT}`);
+  httpServer.on('error', (err) => {
+    console.error(`Failed to bind arXivLab server on ${HOST}:${PORT}:`, err);
+    process.exit(1);
+  });
+
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`arXivLab server listening on http://${HOST}:${PORT}`);
   });
 }
 

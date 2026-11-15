@@ -123,6 +123,43 @@ export function mapInspireDocumentTypesToTags(
   return tags;
 }
 
+export function buildInspireAuthorClause(rawAuthor: string): string {
+  const clean = rawAuthor.replace(/"/g, '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+
+  // Support explicit numeric INSPIRE author recid passed as "recid:999108" or "authors.recid:999108"
+  const recidMatch = clean.match(/^(?:authors?\.)?recid[:\s]+(\d+)$/i);
+  if (recidMatch) {
+    return `authors.recid:${recidMatch[1]}`;
+  }
+
+  // Convert "Last, First Middle" -> "First Middle Last" first so both orderings normalize uniformly
+  let normalized = clean;
+  if (clean.includes(',')) {
+    const [last, ...rest] = clean.split(',');
+    const firstPart = rest.join(' ').trim();
+    normalized = firstPart ? `${firstPart} ${last.trim()}` : last.trim();
+  }
+
+  // Strip dots from middle initials and drop single-letter initials when 2+ longer tokens remain.
+  // Importantly, keep unquoted `a First Last`: INSPIRE SPIRES matches both "Last, First" and "First Last",
+  // whereas quoted `a "Lin, Ethan"` or `a "Juan M. Maldacena"` misses records and can return 0 hits.
+  const tokens = normalized
+    .split(/\s+/)
+    .map((t) => t.replace(/\.$/, '').trim())
+    .filter(Boolean);
+
+  if (tokens.length <= 1) {
+    return `a ${tokens[0] || normalized}`;
+  }
+
+  const meaningful = tokens.filter((t, idx) => idx === tokens.length - 1 || t.length > 1);
+  if (meaningful.length >= 2) {
+    return `a ${meaningful.join(' ')}`;
+  }
+  return `a ${tokens.join(' ')}`;
+}
+
 export function buildInspireLiteratureUrl(params: InspireLiteratureParams): string {
   const url = new URL('https://inspirehep.net/api/literature');
   const clauses: string[] = [];
@@ -130,7 +167,7 @@ export function buildInspireLiteratureUrl(params: InspireLiteratureParams): stri
 
   if (rawQuery) {
     // Allow direct INSPIRE syntax (e.g. "a maldacena", "t holography", "eprint ...", "recid ...")
-    const hasExplicitOperator = /^(?:find\s+|a\s+|t\s+|author:|title:|eprint:|arxiv:|cn:|citcount:|date:)/i.test(
+    const hasExplicitOperator = /^(?:find\s+|a\s+|t\s+|author:|authors\.recid:|title:|eprint:|arxiv:|cn:|citcount:|date:)/i.test(
       rawQuery
     );
     if (hasExplicitOperator || !params.field || params.field === 'all') {
@@ -138,7 +175,8 @@ export function buildInspireLiteratureUrl(params: InspireLiteratureParams): stri
     } else if (params.field === 'title') {
       clauses.push(`t "${rawQuery.replace(/"/g, '')}"`);
     } else if (params.field === 'author') {
-      clauses.push(`a "${rawQuery.replace(/"/g, '')}"`);
+      const clause = buildInspireAuthorClause(rawQuery);
+      if (clause) clauses.push(clause);
     } else if (params.field === 'abstract') {
       clauses.push(`abs "${rawQuery.replace(/"/g, '')}"`);
     } else if (params.field === 'eprint') {

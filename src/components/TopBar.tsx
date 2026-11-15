@@ -1,7 +1,14 @@
 import { Plus } from 'lucide-react';
 import { AppLogo } from './AppLogo';
 
-export type WorkspaceTab = 'search' | 'inspire' | 'library' | 'zotero' | 'mcp' | 'settings';
+export type WorkspaceTab =
+  | 'search'
+  | 'inspire'
+  | 'library'
+  | 'zotero'
+  | 'cloud'
+  | 'mcp'
+  | 'settings';
 
 interface TopBarProps {
   activeTab: WorkspaceTab;
@@ -15,6 +22,7 @@ const NAV_ITEMS: Array<{ id: WorkspaceTab; label: string }> = [
   { id: 'inspire', label: 'INSPIRE-HEP' },
   { id: 'library', label: 'Library' },
   { id: 'zotero', label: 'Zotero' },
+  { id: 'cloud', label: 'Cloud Sync' },
   { id: 'mcp', label: 'MCP Mode' },
   { id: 'settings', label: 'Settings' },
 ];

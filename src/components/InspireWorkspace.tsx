@@ -10,6 +10,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
+import { triggerPaperPdfDownload } from '../shared/download';
 import {
   INSPIRE_DOCUMENT_TYPES,
   INSPIRE_JOB_CATEGORIES,
@@ -31,6 +32,7 @@ import type {
   SavedPaper,
 } from '../shared/types';
 import { AuthorLinkList } from './AuthorLinkList';
+import { AuthorProfileBanner } from './AuthorProfileBanner';
 import { PaperReaderPanel } from './PaperReaderPanel';
 
 interface InspireWorkspaceProps {
@@ -46,7 +48,7 @@ interface InspireWorkspaceProps {
   onSavePaper: (paper: ArxivPaper) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
   onSearchAuthorInArxiv?: (authorName: string) => void;
-  pendingAuthorQuery?: string | null;
+  pendingAuthorQuery?: { name: string; inspireRecid?: string } | null;
   onClearPendingAuthorQuery?: () => void;
 }
 
@@ -86,37 +88,36 @@ export function InspireWorkspace({
   const [jobRegion, setJobRegion] = useState('');
   const [jobCategory, setJobCategory] = useState('');
   const [selectedJob, setSelectedJob] = useState<InspireJob | null>(null);
+  const [activeAuthorBanner, setActiveAuthorBanner] = useState<{
+    name: string;
+    inspireRecid?: string;
+  } | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (pendingAuthorQuery) {
+      const displayName = pendingAuthorQuery.name;
+      const queryValue = pendingAuthorQuery.inspireRecid
+        ? `authors.recid:${pendingAuthorQuery.inspireRecid}`
+        : displayName;
       setSectionMode('literature');
-      setQuery(pendingAuthorQuery);
+      setQuery(displayName);
       setField('author');
+      setActiveAuthorBanner(pendingAuthorQuery);
       void onRunLiteratureSearch({
-        query: pendingAuthorQuery,
+        query: queryValue,
         field: 'author',
-        documentType,
-        subject,
-        yearFrom,
-        yearTo,
-        minCitations: minCitations > 0 ? minCitations : undefined,
-        sortBy,
+        documentType: '',
+        subject: '',
+        yearFrom: '',
+        yearTo: '',
+        minCitations: undefined,
+        sortBy: 'mostrecent',
         size,
       });
       onClearPendingAuthorQuery?.();
     }
-  }, [
-    pendingAuthorQuery,
-    onClearPendingAuthorQuery,
-    onRunLiteratureSearch,
-    documentType,
-    subject,
-    yearFrom,
-    yearTo,
-    minCitations,
-    sortBy,
-    size,
-  ]);
+  }, [pendingAuthorQuery, onClearPendingAuthorQuery, onRunLiteratureSearch, size]);
 
   useEffect(() => {
     if (sectionMode === 'jobs' && jobsResult?.jobs.length && !selectedJob) {
@@ -199,12 +200,13 @@ export function InspireWorkspace({
     setSize(15);
   };
 
-  const handleSearchAuthorHere = (authorName: string) => {
+  const handleSearchAuthorHere = (authorName: string, inspireRecid?: string) => {
     setSectionMode('literature');
     setQuery(authorName);
     setField('author');
+    setActiveAuthorBanner({ name: authorName, inspireRecid });
     void onRunLiteratureSearch({
-      query: authorName,
+      query: inspireRecid ? `authors.recid:${inspireRecid}` : authorName,
       field: 'author',
       documentType,
       subject,
@@ -214,6 +216,17 @@ export function InspireWorkspace({
       sortBy,
       size,
     });
+  };
+
+  const handleCardDownload = async (paper: ArxivPaper) => {
+    setDownloadingId(paper.id);
+    try {
+      await triggerPaperPdfDownload(paper);
+    } catch {
+      // Fall through cleanly
+    } finally {
+      setDownloadingId((curr) => (curr === paper.id ? null : curr));
+    }
   };
 
   return (
@@ -567,6 +580,16 @@ export function InspireWorkspace({
           )}
         </div>
 
+        {sectionMode === 'literature' && activeAuthorBanner && (
+          <AuthorProfileBanner
+            authorName={activeAuthorBanner.name}
+            inspireRecid={activeAuthorBanner.inspireRecid}
+            activeTab="inspirehep"
+            onSwitchToArxiv={onSearchAuthorInArxiv}
+            onDismiss={() => setActiveAuthorBanner(null)}
+          />
+        )}
+
         {error && (
           <div role="alert" className="m-5 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800">
             <p className="font-semibold">INSPIRE-HEP query failed</p>
@@ -677,15 +700,20 @@ export function InspireWorkspace({
                           </button>
 
                           <div className="flex items-center gap-3">
-                            <a
-                              href={`/api/arxiv/download?id=${encodeURIComponent(paper.id)}&save=1`}
-                              download
+                            <button
+                              type="button"
+                              onClick={() => void handleCardDownload(paper)}
+                              disabled={downloadingId === paper.id}
                               aria-label={`Download PDF for ${paper.title}`}
-                              className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap"
+                              className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-blue-600 disabled:opacity-60 whitespace-nowrap"
                             >
-                              <Download className="h-3 w-3" aria-hidden="true" />
-                              <span>PDF</span>
-                            </a>
+                              {downloadingId === paper.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                              )}
+                              <span>{downloadingId === paper.id ? 'Saving...' : 'PDF'}</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => onSelectPaper(paper)}

@@ -8,6 +8,7 @@ import {
   Search,
 } from 'lucide-react';
 import { computeDateRangeFromPreset } from '../shared/arxiv';
+import { triggerPaperPdfDownload } from '../shared/download';
 import {
   ARXIV_CATEGORIES,
   type ArxivBrowseMode,
@@ -20,7 +21,10 @@ import {
   type SavedPaper,
 } from '../shared/types';
 import { AuthorLinkList } from './AuthorLinkList';
+import { AuthorProfileBanner } from './AuthorProfileBanner';
 import { PaperReaderPanel } from './PaperReaderPanel';
+
+type UnifiedFeedScope = 'search' | ArxivBrowseMode;
 
 interface SearchWorkspaceProps {
   searchResult: ArxivSearchResult | null;
@@ -41,7 +45,7 @@ interface SearchWorkspaceProps {
   onRunBrowse: (params: ArxivBrowseParams) => Promise<void>;
   onSavePaper: (paper: ArxivPaper) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
-  onSearchAuthorInInspire?: (authorName: string) => void;
+  onSearchAuthorInInspire?: (authorName: string, inspireRecid?: string) => void;
   pendingAuthorQuery?: string | null;
   onClearPendingAuthorQuery?: () => void;
 }
@@ -59,6 +63,17 @@ const FEATURED_CATEGORIES = [
   'cs.CL',
 ];
 
+const FEED_SCOPES: Array<{
+  id: UnifiedFeedScope;
+  label: string;
+  description: string;
+}> = [
+  { id: 'search', label: 'All arXiv', description: 'Full archive search with date & field filters' },
+  { id: 'new', label: 'New Mailing', description: 'Most recent daily mailing (with abstracts)' },
+  { id: 'recent', label: 'Recent (5d)', description: 'Last 5 daily mailings' },
+  { id: 'current', label: 'This Month', description: "Current month's archive listings" },
+];
+
 export function SearchWorkspace({
   searchResult,
   loading,
@@ -74,8 +89,7 @@ export function SearchWorkspace({
   pendingAuthorQuery,
   onClearPendingAuthorQuery,
 }: SearchWorkspaceProps) {
-  const [queryMode, setQueryMode] = useState<'search' | 'browse'>('search');
-  const [browseMode, setBrowseMode] = useState<ArxivBrowseMode>('new');
+  const [feedScope, setFeedScope] = useState<UnifiedFeedScope>('search');
   const [browseSection, setBrowseSection] = useState<ArxivBrowseSection>('all');
   const [query, setQuery] = useState('');
   const [field, setField] = useState<ArxivSearchField>('all');
@@ -86,12 +100,15 @@ export function SearchWorkspace({
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState<ArxivSortBy>('submittedDate');
   const [maxResults, setMaxResults] = useState(15);
+  const [activeAuthorBanner, setActiveAuthorBanner] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (pendingAuthorQuery) {
-      setQueryMode('search');
+      setFeedScope('search');
       setQuery(pendingAuthorQuery);
       setField('au');
+      setActiveAuthorBanner(pendingAuthorQuery);
       void onRunSearch({
         query: pendingAuthorQuery,
         field: 'au',
@@ -105,26 +122,48 @@ export function SearchWorkspace({
     }
   }, [pendingAuthorQuery, onClearPendingAuthorQuery, onRunSearch, maxResults]);
 
+  const isMailingScope = feedScope !== 'search';
   const activeBrowseCategory = selectedCategories[0] || 'hep-th';
 
-  const triggerBrowse = async (
-    nextBrowseMode: ArxivBrowseMode = browseMode,
-    nextSection: ArxivBrowseSection = browseSection,
-    nextCategory: string = activeBrowseCategory
-  ) => {
-    await onRunBrowse({
-      category: nextCategory,
-      mode: nextBrowseMode,
-      section: nextSection,
-      filterText: query,
+  const triggerUnifiedQuery = async (overrides?: {
+    scope?: UnifiedFeedScope;
+    section?: ArxivBrowseSection;
+    categories?: string[];
+    queryText?: string;
+  }) => {
+    const scope = overrides?.scope ?? feedScope;
+    const section = overrides?.section ?? browseSection;
+    const cats = overrides?.categories ?? selectedCategories;
+    const qText = overrides?.queryText ?? query;
+
+    if (scope !== 'search') {
+      const cat = cats[0] || 'hep-th';
+      await onRunBrowse({
+        category: cat,
+        mode: scope,
+        section,
+        filterText: qText,
+        maxResults,
+      });
+      return;
+    }
+
+    await onRunSearch({
+      query: qText,
+      field,
+      categories: cats,
+      dateFrom,
+      dateTo,
+      sortBy,
       maxResults,
     });
   };
 
   const toggleCategory = (code: string) => {
-    if (queryMode === 'browse') {
-      setSelectedCategories([code]);
-      void triggerBrowse(browseMode, browseSection, code);
+    if (isMailingScope) {
+      const nextCats = [code];
+      setSelectedCategories(nextCats);
+      void triggerUnifiedQuery({ categories: nextCats });
       return;
     }
     setSelectedCategories((prev) =>
@@ -132,19 +171,32 @@ export function SearchWorkspace({
     );
   };
 
-  const handleAddCustomCategory = () => {
-    const trimmed = customCategory.trim();
-    if (!trimmed) return;
-    if (queryMode === 'browse') {
-      setSelectedCategories([trimmed]);
+  const selectCategoryFromPicker = (code: string) => {
+    const clean = code.trim();
+    if (!clean) return;
+    if (isMailingScope) {
+      const nextCats = [clean];
+      setSelectedCategories(nextCats);
       setCustomCategory('');
-      void triggerBrowse(browseMode, browseSection, trimmed);
+      void triggerUnifiedQuery({ categories: nextCats });
       return;
     }
-    if (!selectedCategories.includes(trimmed)) {
-      setSelectedCategories((prev) => [...prev, trimmed]);
+    if (!selectedCategories.includes(clean)) {
+      setSelectedCategories((prev) => [...prev, clean]);
     }
     setCustomCategory('');
+  };
+
+  const handleFeedScopeChange = (nextScope: UnifiedFeedScope) => {
+    setFeedScope(nextScope);
+    if (nextScope !== 'search') {
+      const cat = selectedCategories[0] || 'hep-th';
+      const nextCats = [cat];
+      setSelectedCategories(nextCats);
+      void triggerUnifiedQuery({ scope: nextScope, categories: nextCats });
+    } else {
+      void triggerUnifiedQuery({ scope: 'search' });
+    }
   };
 
   const handlePresetClick = (preset: 'any' | '7d' | '30d' | '1y') => {
@@ -154,43 +206,18 @@ export function SearchWorkspace({
     setDateTo(range.dateTo);
   };
 
-  const handleModeSwitch = (nextMode: 'search' | 'browse') => {
-    setQueryMode(nextMode);
-    if (nextMode === 'browse') {
-      const cat = selectedCategories[0] || 'hep-th';
-      if (selectedCategories.length === 0) {
-        setSelectedCategories([cat]);
-      }
-      void onRunBrowse({
-        category: cat,
-        mode: browseMode,
-        section: browseSection,
-        filterText: query,
-        maxResults,
-      });
-    }
-  };
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (queryMode === 'browse') {
-      await triggerBrowse();
-      return;
+    if (field !== 'au' || !query.trim()) {
+      setActiveAuthorBanner(null);
+    } else if (field === 'au' && query.trim()) {
+      setActiveAuthorBanner(query.trim());
     }
-    await onRunSearch({
-      query,
-      field,
-      categories: selectedCategories,
-      dateFrom,
-      dateTo,
-      sortBy,
-      maxResults,
-    });
+    await triggerUnifiedQuery();
   };
 
   const handleReset = () => {
-    setQueryMode('search');
-    setBrowseMode('new');
+    setFeedScope('search');
     setBrowseSection('all');
     setQuery('');
     setField('all');
@@ -200,14 +227,42 @@ export function SearchWorkspace({
     setDateTo('');
     setSortBy('submittedDate');
     setMaxResults(15);
+    setActiveAuthorBanner(null);
+  };
+
+  const handleSearchAuthorHere = (authorName: string) => {
+    setFeedScope('search');
+    setQuery(authorName);
+    setField('au');
+    setActiveAuthorBanner(authorName);
+    void onRunSearch({
+      query: authorName,
+      field: 'au',
+      categories: [],
+      dateFrom: '',
+      dateTo: '',
+      sortBy: 'submittedDate',
+      maxResults,
+    });
+  };
+
+  const handleCardDownload = async (paper: ArxivPaper) => {
+    setDownloadingId(paper.id);
+    try {
+      await triggerPaperPdfDownload(paper);
+    } catch {
+      // Errors also surface on inspect/reader if upstream rejects
+    } finally {
+      setDownloadingId((curr) => (curr === paper.id ? null : curr));
+    }
   };
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-      {/* Left Query & Filter Column */}
+      {/* Left Unified arXiv Query & Mailing Column */}
       <aside className="w-full shrink-0 rounded-xl border border-black/[0.08] bg-white p-5 lg:w-80">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h1 className="text-sm font-semibold text-slate-900">arXiv.org Query</h1>
+          <h1 className="text-sm font-semibold text-slate-900">arXiv Search &amp; Mailings</h1>
           <button
             type="button"
             onClick={handleReset}
@@ -219,117 +274,77 @@ export function SearchWorkspace({
         </div>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-5">
-          {/* Mode Switch: API Search vs Direct Mailing Browse */}
-          <div
-            role="group"
-            aria-label="arXiv query mode"
-            className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1"
-          >
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('search')}
-              aria-pressed={queryMode === 'search'}
-              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
-                queryMode === 'search'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+          {/* Unified Feed / Mailing Scope Selector */}
+          <div className="space-y-2">
+            <span className="block text-xs font-medium text-slate-700">Feed Scope</span>
+            <div
+              role="group"
+              aria-label="arXiv feed scope"
+              className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1"
             >
-              Search
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('browse')}
-              aria-pressed={queryMode === 'browse'}
-              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
-                queryMode === 'browse'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Browse Mailings
-            </button>
-          </div>
+              {FEED_SCOPES.map((item) => {
+                const active = feedScope === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    title={item.description}
+                    aria-pressed={active}
+                    onClick={() => handleFeedScopeChange(item.id)}
+                    className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                      active
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-500">
+              {FEED_SCOPES.find((f) => f.id === feedScope)?.description}
+            </p>
 
-          {queryMode === 'browse' && (
-            <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-              <div>
-                <span className="block text-xs font-medium text-slate-700">
-                  arXiv Browse Listing
+            {feedScope === 'new' && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
+                <span className="block text-[11px] font-medium text-slate-600">
+                  Mailing Section
                 </span>
-                <div className="mt-1.5 grid grid-cols-3 gap-1 rounded-lg bg-slate-200/70 p-1">
+                <div className="mt-1.5 grid grid-cols-2 gap-1">
                   {(
                     [
-                      { id: 'new', label: 'New', hint: 'Most recent mailing with abstracts' },
-                      { id: 'recent', label: 'Recent', hint: 'Last 5 mailings' },
-                      { id: 'current', label: 'Current', hint: "Current month's listings" },
+                      { id: 'all', label: 'All entries' },
+                      { id: 'new', label: 'New' },
+                      { id: 'cross', label: 'Cross-lists' },
+                      { id: 'replacement', label: 'Replacements' },
                     ] as const
-                  ).map((item) => (
+                  ).map((sec) => (
                     <button
-                      key={item.id}
+                      key={sec.id}
                       type="button"
-                      title={item.hint}
                       onClick={() => {
-                        setBrowseMode(item.id);
-                        void triggerBrowse(item.id, browseSection, activeBrowseCategory);
+                        setBrowseSection(sec.id);
+                        void triggerUnifiedQuery({ section: sec.id });
                       }}
-                      className={`rounded-md py-1 text-xs font-medium transition-colors ${
-                        browseMode === item.id
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
+                      className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                        browseSection === sec.id
+                          ? 'border-blue-700 bg-blue-50 text-blue-800'
+                          : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      {item.label}
+                      {sec.label}
                     </button>
                   ))}
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  {browseMode === 'new' && 'Most recent mailing (with abstracts)'}
-                  {browseMode === 'recent' && 'Last 5 daily mailings'}
-                  {browseMode === 'current' && "Current month's archive listings"}
-                </p>
               </div>
-
-              {browseMode === 'new' && (
-                <div>
-                  <span className="block text-[11px] font-medium text-slate-600">
-                    Mailing Section
-                  </span>
-                  <div className="mt-1 grid grid-cols-2 gap-1">
-                    {(
-                      [
-                        { id: 'all', label: 'All entries' },
-                        { id: 'new', label: 'New' },
-                        { id: 'cross', label: 'Cross-lists' },
-                        { id: 'replacement', label: 'Replacements' },
-                      ] as const
-                    ).map((sec) => (
-                      <button
-                        key={sec.id}
-                        type="button"
-                        onClick={() => {
-                          setBrowseSection(sec.id);
-                          void triggerBrowse(browseMode, sec.id, activeBrowseCategory);
-                        }}
-                        className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-                          browseSection === sec.id
-                            ? 'border-blue-700 bg-blue-50 text-blue-800'
-                            : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {sec.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Keyword & Target Field */}
-          <div className="space-y-2">
+          <div className="space-y-2 border-t border-slate-100 pt-4">
             <label htmlFor="search-keyword" className="block text-xs font-medium text-slate-700">
-              {queryMode === 'browse' ? 'Filter listing (optional)' : 'Keywords or arXiv ID'}
+              {isMailingScope ? 'Filter mailing (optional)' : 'Keywords, author, or arXiv ID'}
             </label>
             <input
               id="search-keyword"
@@ -337,13 +352,13 @@ export function SearchWorkspace({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={
-                queryMode === 'browse'
-                  ? 'Filter by title, author, or ID...'
+                isMailingScope
+                  ? 'Filter titles, authors, abstracts...'
                   : 'e.g. holographic entropy, 2401.12345'
               }
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none"
             />
-            {queryMode === 'search' && (
+            {!isMailingScope && (
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label htmlFor="search-field" className="block text-[11px] text-slate-500">
@@ -385,9 +400,9 @@ export function SearchWorkspace({
           <div className="space-y-2 border-t border-slate-100 pt-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-700">
-                {queryMode === 'browse' ? 'Archive Category' : 'arXiv Categories'}
+                {isMailingScope ? 'Mailing Category' : 'arXiv Categories'}
               </span>
-              {queryMode === 'search' && selectedCategories.length > 0 && (
+              {!isMailingScope && selectedCategories.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setSelectedCategories([])}
@@ -429,7 +444,7 @@ export function SearchWorkspace({
                     onClick={() => toggleCategory(extra)}
                     className="rounded-md border border-blue-700 bg-blue-50 px-2 py-1 font-mono text-[11px] font-medium text-blue-800 whitespace-nowrap"
                   >
-                    {extra} ×
+                    {extra} {!isMailingScope ? '×' : ''}
                   </button>
                 ))}
             </div>
@@ -440,18 +455,10 @@ export function SearchWorkspace({
               </label>
               <select
                 id="custom-category-select"
-                value={customCategory}
+                value=""
                 onChange={(e) => {
                   const val = e.target.value;
-                  if (val) {
-                    if (queryMode === 'browse') {
-                      setSelectedCategories([val]);
-                      void triggerBrowse(browseMode, browseSection, val);
-                    } else if (!selectedCategories.includes(val)) {
-                      setSelectedCategories((prev) => [...prev, val]);
-                    }
-                  }
-                  setCustomCategory('');
+                  if (val) selectCategoryFromPicker(val);
                 }}
                 className="w-0 min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-700 focus:outline-none"
               >
@@ -470,7 +477,7 @@ export function SearchWorkspace({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleAddCustomCategory();
+                    selectCategoryFromPicker(customCategory);
                   }
                 }}
                 placeholder="code"
@@ -479,8 +486,8 @@ export function SearchWorkspace({
             </div>
           </div>
 
-          {/* Date Range Filter (Search mode only) */}
-          {queryMode === 'search' && (
+          {/* Date Range Filter (All arXiv Search scope only) */}
+          {!isMailingScope && (
             <div className="space-y-2 border-t border-slate-100 pt-4">
               <span className="block text-xs font-medium text-slate-700">Submission Date</span>
               <div className="grid grid-cols-4 gap-1 rounded-lg bg-slate-100 p-1">
@@ -572,8 +579,8 @@ export function SearchWorkspace({
             <span>
               {loading
                 ? 'Querying arxiv.org...'
-                : queryMode === 'browse'
-                  ? `Browse /${activeBrowseCategory}/${browseMode}`
+                : isMailingScope
+                  ? `Load /${activeBrowseCategory}/${feedScope}`
                   : 'Search arXiv'}
             </span>
           </button>
@@ -586,7 +593,7 @@ export function SearchWorkspace({
           <div>
             <h2 className="text-sm font-semibold text-slate-900">
               {searchResult?.browseMeta
-                ? `Browse: /list/${searchResult.browseMeta.category}/${searchResult.browseMeta.mode}`
+                ? `Mailing: /list/${searchResult.browseMeta.category}/${searchResult.browseMeta.mode}`
                 : 'Results'}
             </h2>
             {searchResult && (
@@ -605,6 +612,13 @@ export function SearchWorkspace({
             </span>
           )}
         </div>
+
+        <AuthorProfileBanner
+          authorName={activeAuthorBanner}
+          activeTab="arxiv"
+          onSwitchToInspire={onSearchAuthorInInspire}
+          onDismiss={() => setActiveAuthorBanner(null)}
+        />
 
         {error && (
           <div role="alert" className="m-5 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800">
@@ -629,7 +643,7 @@ export function SearchWorkspace({
           <div className="p-10 text-center">
             <p className="text-sm font-semibold text-slate-800">No matching papers on arXiv</p>
             <p className="mt-1 text-xs text-slate-500">
-              Try widening the date range, removing restrictive keywords, or switching categories.
+              Try widening the date range, switching Feed Scope to Recent/All arXiv, or choosing another category.
             </p>
           </div>
         )}
@@ -639,6 +653,7 @@ export function SearchWorkspace({
             {searchResult.papers.map((paper) => {
               const isSaved = savedIds.has(paper.id);
               const isSelected = selectedPaper?.id === paper.id;
+              const isDownloading = downloadingId === paper.id;
               return (
                 <li
                   key={paper.id}
@@ -684,20 +699,7 @@ export function SearchWorkspace({
                         authorDetails={paper.authorDetails}
                         maxVisible={5}
                         preferSource="arxiv"
-                        onSearchAuthorInArxiv={(authorName) => {
-                          setQueryMode('search');
-                          setQuery(authorName);
-                          setField('au');
-                          void onRunSearch({
-                            query: authorName,
-                            field: 'au',
-                            categories: [],
-                            dateFrom: '',
-                            dateTo: '',
-                            sortBy: 'submittedDate',
-                            maxResults,
-                          });
-                        }}
+                        onSearchAuthorInArxiv={handleSearchAuthorHere}
                         onSearchAuthorInInspire={onSearchAuthorInInspire}
                         className="mt-1"
                       />
@@ -731,15 +733,20 @@ export function SearchWorkspace({
                       </button>
 
                       <div className="flex items-center gap-3">
-                        <a
-                          href={`/api/arxiv/download?id=${encodeURIComponent(paper.id)}&save=1`}
-                          download
+                        <button
+                          type="button"
+                          onClick={() => void handleCardDownload(paper)}
+                          disabled={isDownloading}
                           aria-label={`Download PDF for ${paper.title}`}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-blue-600 disabled:opacity-60 whitespace-nowrap"
                         >
-                          <Download className="h-3 w-3" aria-hidden="true" />
-                          <span>PDF</span>
-                        </a>
+                          {isDownloading ? (
+                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Download className="h-3 w-3" aria-hidden="true" />
+                          )}
+                          <span>{isDownloading ? 'Saving...' : 'PDF'}</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => onSelectPaper(paper)}
@@ -764,20 +771,7 @@ export function SearchWorkspace({
         onClose={() => onSelectPaper(null)}
         onSavePaper={onSavePaper}
         onSyncZotero={onSyncZotero}
-        onSearchAuthorInArxiv={(authorName) => {
-          setQueryMode('search');
-          setQuery(authorName);
-          setField('au');
-          void onRunSearch({
-            query: authorName,
-            field: 'au',
-            categories: [],
-            dateFrom: '',
-            dateTo: '',
-            sortBy: 'submittedDate',
-            maxResults,
-          });
-        }}
+        onSearchAuthorInArxiv={handleSearchAuthorHere}
         onSearchAuthorInInspire={onSearchAuthorInInspire}
       />
     </div>

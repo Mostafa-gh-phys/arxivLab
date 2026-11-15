@@ -3,10 +3,12 @@ import {
   Check,
   Download,
   ExternalLink,
+  Loader2,
   Save,
   Send,
   Trash2,
 } from 'lucide-react';
+import { triggerPaperPdfDownload } from '../shared/download';
 import { formatBytes } from '../shared/network';
 import type { ArxivPaper, SavedPaper } from '../shared/types';
 import { AuthorLinkList } from './AuthorLinkList';
@@ -21,7 +23,7 @@ interface LibraryViewProps {
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
   onGoToSearch: () => void;
   onSearchAuthorInArxiv?: (authorName: string) => void;
-  onSearchAuthorInInspire?: (authorName: string) => void;
+  onSearchAuthorInInspire?: (authorName: string, inspireRecid?: string) => void;
 }
 
 export function LibraryView({
@@ -42,6 +44,7 @@ export function LibraryView({
   const [draftNotes, setDraftNotes] = useState('');
   const [draftTags, setDraftTags] = useState('');
   const [savedNoticeId, setSavedNoticeId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
@@ -333,15 +336,27 @@ export function LibraryView({
                         <Send className="h-3 w-3" aria-hidden="true" />
                         <span>Zotero</span>
                       </button>
-                      <a
-                        href={`/api/arxiv/download?id=${encodeURIComponent(paper.id)}&save=1`}
-                        download
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setDownloadingId(paper.id);
+                          try {
+                            await triggerPaperPdfDownload(paper);
+                          } finally {
+                            setDownloadingId((curr) => (curr === paper.id ? null : curr));
+                          }
+                        }}
+                        disabled={downloadingId === paper.id}
                         aria-label={`Download PDF for ${paper.title}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                       >
-                        <Download className="h-3 w-3" aria-hidden="true" />
-                        <span>PDF</span>
-                      </a>
+                        {downloadingId === paper.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Download className="h-3 w-3" aria-hidden="true" />
+                        )}
+                        <span>{downloadingId === paper.id ? 'Saving...' : 'PDF'}</span>
+                      </button>
                       <a
                         href={paper.pdfUrl}
                         target="_blank"

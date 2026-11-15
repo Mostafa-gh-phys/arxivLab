@@ -195,6 +195,25 @@ export interface McpActivityEntry {
   durationMs: number;
 }
 
+export type CustomCloudProvider = 'webdav' | 'custom_http';
+
+export interface CustomCloudConfig {
+  provider: CustomCloudProvider;
+  endpointUrl: string;
+  remotePath: string;
+  username: string;
+  passwordOrToken: string;
+  hasSecret?: boolean;
+  includeCachedPdfs: boolean;
+  lastSyncedAt?: string;
+}
+
+export interface AuthorSearchContext {
+  name: string;
+  inspireRecid?: string;
+  target: 'arxiv' | 'inspirehep';
+}
+
 export interface ArxivCategoryOption {
   code: string;
   label: string;

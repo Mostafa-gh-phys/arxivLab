@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AddByIdModal } from './components/AddByIdModal';
+import { CloudSyncView } from './components/CloudSyncView';
 import { InspireWorkspace } from './components/InspireWorkspace';
 import { LibraryView } from './components/LibraryView';
 import { McpModeView } from './components/McpModeView';
@@ -31,14 +32,26 @@ export default function App() {
   const [inspireLoading, setInspireLoading] = useState(false);
   const [inspireError, setInspireError] = useState<string | null>(null);
   const [selectedPaper, setSelectedPaper] = useState<ArxivPaper | SavedPaper | null>(null);
-  const [selectedInspirePaper, setSelectedInspirePaper] = useState<ArxivPaper | SavedPaper | null>(null);
+  const [selectedLibraryPaper, setSelectedLibraryPaper] = useState<ArxivPaper | SavedPaper | null>(
+    null
+  );
+  const [selectedInspirePaper, setSelectedInspirePaper] = useState<ArxivPaper | SavedPaper | null>(
+    null
+  );
   const [pendingArxivAuthor, setPendingArxivAuthor] = useState<string | null>(null);
-  const [pendingInspireAuthor, setPendingInspireAuthor] = useState<string | null>(null);
+  const [pendingInspireAuthor, setPendingInspireAuthor] = useState<{
+    name: string;
+    inspireRecid?: string;
+  } | null>(null);
   const [addByIdOpen, setAddByIdOpen] = useState(false);
   const [bannerMessage, setBannerMessage] = useState<{
     type: 'ok' | 'error';
     text: string;
   } | null>(null);
+
+  // Sequence guards prevent out-of-order responses when switching categories or authors rapidly
+  const arxivReqSeqRef = useRef(0);
+  const inspireReqSeqRef = useRef(0);
 
   const savedIds = useMemo(() => new Set(savedPapers.map((p) => p.id)), [savedPapers]);
 
@@ -67,6 +80,7 @@ export default function App() {
       sortBy: ArxivSortBy;
       maxResults: number;
     }) => {
+      const seq = ++arxivReqSeqRef.current;
       setSearching(true);
       setSearchError(null);
       try {
@@ -76,23 +90,34 @@ export default function App() {
           body: JSON.stringify(params),
         });
         const data = await res.json();
+        if (seq !== arxivReqSeqRef.current) return;
         if (!res.ok) {
           throw new Error(data.error || 'arXiv search failed.');
         }
-        setSearchResult(data as ArxivSearchResult);
-        if (data.papers?.length > 0 && window.innerWidth >= 1280) {
-          setSelectedPaper((curr) => curr || data.papers[0]);
+        const typed = data as ArxivSearchResult;
+        setSearchResult(typed);
+        if (window.innerWidth >= 1280) {
+          setSelectedPaper((curr) =>
+            curr && typed.papers.some((p) => p.id === curr.id)
+              ? curr
+              : typed.papers[0] || null
+          );
         }
       } catch (err: unknown) {
-        setSearchError((err as Error).message);
+        if (seq === arxivReqSeqRef.current) {
+          setSearchError((err as Error).message);
+        }
       } finally {
-        setSearching(false);
+        if (seq === arxivReqSeqRef.current) {
+          setSearching(false);
+        }
       }
     },
     []
   );
 
   const runBrowse = useCallback(async (params: ArxivBrowseParams) => {
+    const seq = ++arxivReqSeqRef.current;
     setSearching(true);
     setSearchError(null);
     try {
@@ -102,21 +127,32 @@ export default function App() {
         body: JSON.stringify(params),
       });
       const data = await res.json();
+      if (seq !== arxivReqSeqRef.current) return;
       if (!res.ok) {
         throw new Error(data.error || 'arXiv mailing browse failed.');
       }
-      setSearchResult(data as ArxivSearchResult);
-      if (data.papers?.length > 0 && window.innerWidth >= 1280) {
-        setSelectedPaper((curr) => curr || data.papers[0]);
+      const typed = data as ArxivSearchResult;
+      setSearchResult(typed);
+      if (window.innerWidth >= 1280) {
+        setSelectedPaper((curr) =>
+          curr && typed.papers.some((p) => p.id === curr.id)
+            ? curr
+            : typed.papers[0] || null
+        );
       }
     } catch (err: unknown) {
-      setSearchError((err as Error).message);
+      if (seq === arxivReqSeqRef.current) {
+        setSearchError((err as Error).message);
+      }
     } finally {
-      setSearching(false);
+      if (seq === arxivReqSeqRef.current) {
+        setSearching(false);
+      }
     }
   }, []);
 
   const runInspireLiterature = useCallback(async (params: InspireLiteratureParams) => {
+    const seq = ++inspireReqSeqRef.current;
     setInspireLoading(true);
     setInspireError(null);
     try {
@@ -126,21 +162,32 @@ export default function App() {
         body: JSON.stringify(params),
       });
       const data = await res.json();
+      if (seq !== inspireReqSeqRef.current) return;
       if (!res.ok) {
         throw new Error(data.error || 'INSPIRE-HEP search failed.');
       }
-      setInspireLitResult(data as InspireLiteratureResult);
-      if (data.papers?.length > 0 && window.innerWidth >= 1280) {
-        setSelectedInspirePaper((curr) => curr || data.papers[0]);
+      const typed = data as InspireLiteratureResult;
+      setInspireLitResult(typed);
+      if (window.innerWidth >= 1280) {
+        setSelectedInspirePaper((curr) =>
+          curr && typed.papers.some((p) => p.id === curr.id)
+            ? curr
+            : typed.papers[0] || null
+        );
       }
     } catch (err: unknown) {
-      setInspireError((err as Error).message);
+      if (seq === inspireReqSeqRef.current) {
+        setInspireError((err as Error).message);
+      }
     } finally {
-      setInspireLoading(false);
+      if (seq === inspireReqSeqRef.current) {
+        setInspireLoading(false);
+      }
     }
   }, []);
 
   const runInspireJobs = useCallback(async (params: InspireJobsParams) => {
+    const seq = ++inspireReqSeqRef.current;
     setInspireLoading(true);
     setInspireError(null);
     try {
@@ -150,14 +197,19 @@ export default function App() {
         body: JSON.stringify(params),
       });
       const data = await res.json();
+      if (seq !== inspireReqSeqRef.current) return;
       if (!res.ok) {
         throw new Error(data.error || 'INSPIRE-HEP Jobs search failed.');
       }
       setInspireJobsResult(data as InspireJobsResult);
     } catch (err: unknown) {
-      setInspireError((err as Error).message);
+      if (seq === inspireReqSeqRef.current) {
+        setInspireError((err as Error).message);
+      }
     } finally {
-      setInspireLoading(false);
+      if (seq === inspireReqSeqRef.current) {
+        setInspireLoading(false);
+      }
     }
   }, []);
 
@@ -175,7 +227,13 @@ export default function App() {
   }, [loadLibrary, runSearch]);
 
   useEffect(() => {
-    if (activeTab === 'inspire' && !inspireLitResult && !inspireLoading && !pendingInspireAuthor) {
+    if (
+      activeTab === 'inspire' &&
+      !inspireLitResult &&
+      !inspireLoading &&
+      !pendingInspireAuthor &&
+      inspireReqSeqRef.current === 0
+    ) {
       runInspireLiterature({
         query: '',
         field: 'all',
@@ -191,10 +249,13 @@ export default function App() {
     setActiveTab('search');
   }, []);
 
-  const handleSearchAuthorInInspire = useCallback((authorName: string) => {
-    setPendingInspireAuthor(authorName);
+  const handleSearchAuthorInInspire = useCallback((authorName: string, inspireRecid?: string) => {
+    setPendingInspireAuthor({ name: authorName, inspireRecid });
     setActiveTab('inspire');
   }, []);
+
+  const clearPendingArxivAuthor = useCallback(() => setPendingArxivAuthor(null), []);
+  const clearPendingInspireAuthor = useCallback(() => setPendingInspireAuthor(null), []);
 
   const handleSavePaper = async (paper: ArxivPaper) => {
     const res = await fetch('/api/library', {
@@ -219,7 +280,7 @@ export default function App() {
       'ok',
       data.zoteroSyncMessage
         ? `Saved ${label}${docTagPreview} · ${data.zoteroSyncMessage}`
-        : `Saved ${label}${docTagPreview} to Linux library.`
+        : `Saved ${label}${docTagPreview} to library.`
     );
   };
 
@@ -242,10 +303,10 @@ export default function App() {
     const data = await res.json();
     if (res.ok && Array.isArray(data.papers)) {
       setSavedPapers(data.papers);
-      if (selectedPaper?.id === id) {
-        setSelectedPaper(null);
+      if (selectedLibraryPaper?.id === id) {
+        setSelectedLibraryPaper(null);
       }
-      showNotice('ok', `Removed arXiv:${id} from library.`);
+      showNotice('ok', `Removed ${id.startsWith('inspire:') ? id : `arXiv:${id}`} from library.`);
     }
   };
 
@@ -303,7 +364,7 @@ export default function App() {
             onSyncZotero={handleSyncZotero}
             onSearchAuthorInInspire={handleSearchAuthorInInspire}
             pendingAuthorQuery={pendingArxivAuthor}
-            onClearPendingAuthorQuery={() => setPendingArxivAuthor(null)}
+            onClearPendingAuthorQuery={clearPendingArxivAuthor}
           />
         )}
 
@@ -322,15 +383,15 @@ export default function App() {
             onSyncZotero={handleSyncZotero}
             onSearchAuthorInArxiv={handleSearchAuthorInArxiv}
             pendingAuthorQuery={pendingInspireAuthor}
-            onClearPendingAuthorQuery={() => setPendingInspireAuthor(null)}
+            onClearPendingAuthorQuery={clearPendingInspireAuthor}
           />
         )}
 
         {activeTab === 'library' && (
           <LibraryView
             papers={savedPapers}
-            selectedPaper={selectedPaper}
-            onSelectPaper={setSelectedPaper}
+            selectedPaper={selectedLibraryPaper || savedPapers[0] || null}
+            onSelectPaper={setSelectedLibraryPaper}
             onUpdatePaperMeta={handleUpdatePaperMeta}
             onDeletePaper={handleDeletePaper}
             onSyncZotero={handleSyncZotero}
@@ -342,6 +403,10 @@ export default function App() {
 
         {activeTab === 'zotero' && (
           <ZoteroView papers={savedPapers} onPapersUpdated={setSavedPapers} />
+        )}
+
+        {activeTab === 'cloud' && (
+          <CloudSyncView papers={savedPapers} onPapersUpdated={setSavedPapers} />
         )}
 
         {activeTab === 'mcp' && <McpModeView onLibraryMutated={loadLibrary} />}

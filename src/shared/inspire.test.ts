@@ -3,6 +3,7 @@ import test from 'node:test';
 import { normalizePaperId } from './arxiv';
 import {
   buildAuthorExternalUrls,
+  buildInspireAuthorClause,
   buildInspireJobsUrl,
   buildInspireLiteratureUrl,
   doesInspireAuthorMatchName,
@@ -51,9 +52,18 @@ test('buildInspireLiteratureUrl formats field clauses, doc_type, subject, citati
   assert.equal(parsed.searchParams.get('doc_type'), 'lectures');
   assert.equal(parsed.searchParams.get('subject'), 'Theory-HEP');
   const q = parsed.searchParams.get('q') || '';
-  assert.match(q, /a "Maldacena"/);
+  assert.match(q, /a Maldacena/);
   assert.match(q, /de 2015->2026/);
   assert.match(q, /cited 50->9999999/);
+});
+
+test('buildInspireAuthorClause normalizes full names, middle initials, and recids', () => {
+  assert.equal(buildInspireAuthorClause('Juan M. Maldacena'), 'a Juan Maldacena');
+  assert.equal(buildInspireAuthorClause('Maldacena, Juan'), 'a Juan Maldacena');
+  assert.equal(buildInspireAuthorClause('Edward Witten'), 'a Edward Witten');
+  assert.equal(buildInspireAuthorClause('Ethan Lin'), 'a Ethan Lin');
+  assert.equal(buildInspireAuthorClause('recid:999108'), 'authors.recid:999108');
+  assert.equal(buildInspireAuthorClause('authors.recid:999108'), 'authors.recid:999108');
 });
 
 test('buildInspireJobsUrl passes status, rank, region, and category filters', () => {

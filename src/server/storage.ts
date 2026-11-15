@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  CustomCloudConfig,
   McpActivityEntry,
   McpConfig,
   SavedPaper,
@@ -20,6 +21,7 @@ interface PersistedConfig {
   zotero: ZoteroConfig;
   mcp: McpConfig;
   network: NetworkConfig;
+  cloud: CustomCloudConfig;
 }
 
 const SEED_PAPERS: SavedPaper[] = [
@@ -122,6 +124,14 @@ function defaultConfig(): PersistedConfig {
       useCustomDnsForArxiv: true,
       useCustomDnsForZotero: true,
     },
+    cloud: {
+      provider: 'webdav',
+      endpointUrl: '',
+      remotePath: '/arXivLab',
+      username: '',
+      passwordOrToken: '',
+      includeCachedPdfs: true,
+    },
   };
 }
 
@@ -175,6 +185,7 @@ export async function readConfig(): Promise<PersistedConfig> {
       zotero: { ...defaults.zotero, ...(parsed.zotero || {}) },
       mcp: { ...defaults.mcp, ...(parsed.mcp || {}) },
       network: { ...defaults.network, ...(parsed.network || {}) },
+      cloud: { ...defaults.cloud, ...(parsed.cloud || {}) },
     };
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -198,6 +209,59 @@ export function sanitizeZoteroConfigForClient(cfg: ZoteroConfig): ZoteroConfig {
     apiKey: cfg.apiKey ? `${cfg.apiKey.slice(0, 4)}••••${cfg.apiKey.slice(-4)}` : '',
     hasApiKey: Boolean(cfg.apiKey),
   };
+}
+
+export function sanitizeCloudConfigForClient(cfg: CustomCloudConfig): CustomCloudConfig {
+  return {
+    ...cfg,
+    passwordOrToken: cfg.passwordOrToken
+      ? `${cfg.passwordOrToken.slice(0, 2)}••••${cfg.passwordOrToken.slice(-2)}`
+      : '',
+    hasSecret: Boolean(cfg.passwordOrToken),
+  };
+}
+
+export async function mergeImportedLibrary(incomingPapers: SavedPaper[]): Promise<{
+  papers: SavedPaper[];
+  added: number;
+  updated: number;
+}> {
+  const existing = await readLibrary();
+  const byId = new Map(existing.map((p) => [p.id, p]));
+  let added = 0;
+  let updated = 0;
+
+  for (const item of incomingPapers) {
+    if (!item || !item.id || !item.title) continue;
+    const prev = byId.get(item.id);
+    if (!prev) {
+      byId.set(item.id, {
+        ...item,
+        savedAt: item.savedAt || new Date().toISOString(),
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        notes: typeof item.notes === 'string' ? item.notes : '',
+      });
+      added += 1;
+    } else {
+      const mergedTags = Array.from(
+        new Set([...(prev.tags || []), ...(Array.isArray(item.tags) ? item.tags : [])])
+      ).filter(Boolean);
+      const mergedNotes = prev.notes?.trim() ? prev.notes : item.notes || '';
+      byId.set(item.id, {
+        ...item,
+        ...prev,
+        tags: mergedTags,
+        notes: mergedNotes,
+      });
+      updated += 1;
+    }
+  }
+
+  const next = Array.from(byId.values()).sort(
+    (a, b) => Date.parse(b.savedAt || '') - Date.parse(a.savedAt || '')
+  );
+  await writeLibrary(next);
+  return { papers: next, added, updated };
 }
 
 function safeCacheFileName(arxivId: string): string {
@@ -225,9 +289,13 @@ export function safePdfFileName(arxivId: string): string {
   return arxivId.replace(/[^a-zA-Z0-9._-]/g, '_') + '.pdf';
 }
 
+export function getCachedPdfFilePath(arxivId: string): string {
+  return path.join(PDFS_CACHE_DIR, safePdfFileName(arxivId));
+}
+
 export async function readCachedPdf(arxivId: string): Promise<Buffer | null> {
   await ensureDirs();
-  const filePath = path.join(PDFS_CACHE_DIR, safePdfFileName(arxivId));
+  const filePath = getCachedPdfFilePath(arxivId);
   try {
     return await fs.readFile(filePath);
   } catch {
@@ -240,7 +308,7 @@ export async function writeCachedPdf(arxivId: string, buffer: Buffer): Promise<{
   sizeBytes: number;
 }> {
   await ensureDirs();
-  const filePath = path.join(PDFS_CACHE_DIR, safePdfFileName(arxivId));
+  const filePath = getCachedPdfFilePath(arxivId);
   await fs.writeFile(filePath, buffer);
   return { filePath, sizeBytes: buffer.byteLength };
 }

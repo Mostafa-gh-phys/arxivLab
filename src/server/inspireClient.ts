@@ -1,4 +1,4 @@
-import { parseArxivAtomFeed } from '../shared/arxiv';
+import { buildArxivAuthorSearchClause, parseArxivAtomFeed } from '../shared/arxiv';
 import {
   buildAuthorExternalUrls,
   buildInspireJobsUrl,
@@ -190,10 +190,10 @@ export async function resolveAuthorProfiles(
 
   const arxivPromise = (async () => {
     try {
-      const cleanAuthor = name.replace(/"/g, '').trim();
-      if (!cleanAuthor) return;
+      const authorClause = buildArxivAuthorSearchClause(name);
+      if (!authorClause) return;
       const arxivApiUrl = `https://export.arxiv.org/api/query?search_query=${encodeURIComponent(
-        `au:"${cleanAuthor}"`
+        authorClause
       )}&max_results=3&sortBy=submittedDate&sortOrder=descending`;
       const res = await dnsAwareRequest(arxivApiUrl, {
         method: 'GET',

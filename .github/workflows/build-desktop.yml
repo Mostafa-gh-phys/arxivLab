@@ -1,4 +1,4 @@
-name: Build Desktop Installers (Linux AppImage & Windows EXE)
+name: Build Desktop Installers (Linux AppImage, Windows EXE & macOS DMG)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
         description: 'Release tag to create alongside previous releases (auto-bumps if existing release is immutable)'
         type: string
         required: false
-        default: 'v1.1.1'
+        default: 'v2.0'
   push:
     tags:
       - 'v*'
@@ -53,8 +53,27 @@ jobs:
           name: arxivlab-windows-exe
           path: release/*.exe
 
+  build-macos:
+    runs-on: macos-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm install --no-save electron electron-builder
+      - run: npm run dist:mac
+      - uses: actions/upload-artifact@v7
+        with:
+          name: arxivlab-macos-dmg
+          path: |
+            release/*.dmg
+            release/*.zip
+
   publish-release:
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-macos]
     if: success() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release != false))
     runs-on: ubuntu-latest
     steps:

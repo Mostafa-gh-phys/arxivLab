@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildArxivAuthorSearchClause,
   buildArxivQueryUrl,
+  buildSafePdfDownloadFilename,
   computeDateRangeFromPreset,
   normalizeArxivId,
   parseArxivAtomFeed,
@@ -96,4 +98,19 @@ test('parseArxivAtomFeed extracts papers, authors, categories, and links', () =>
   assert.deepEqual(p.categories, ['hep-th', 'gr-qc']);
   assert.equal(p.pdfUrl, 'https://arxiv.org/pdf/hep-th/9711200v3');
   assert.equal(p.doi, '10.1023/A:1026654312961');
+});
+
+test('buildArxivAuthorSearchClause normalizes Last, First and strips dotted middle initials', () => {
+  assert.equal(buildArxivAuthorSearchClause('Juan M. Maldacena'), 'au:"Juan Maldacena"');
+  assert.equal(buildArxivAuthorSearchClause('Maldacena, Juan M.'), 'au:"Juan Maldacena"');
+  assert.equal(buildArxivAuthorSearchClause('Edward Witten'), 'au:"Edward Witten"');
+  assert.equal(buildArxivAuthorSearchClause('Witten'), 'au:Witten');
+});
+
+test('buildSafePdfDownloadFilename generates clean deterministic PDF filenames', () => {
+  assert.equal(
+    buildSafePdfDownloadFilename('hep-th/9711200', 'The Large N Limit: A Study?'),
+    'hep-th_9711200 - The Large N Limit A Study.pdf'
+  );
+  assert.equal(buildSafePdfDownloadFilename('2401.12345'), '2401.12345.pdf');
 });

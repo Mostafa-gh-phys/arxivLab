@@ -9,7 +9,7 @@ interface AuthorLinkListProps {
   maxVisible?: number;
   preferSource?: 'arxiv' | 'inspirehep';
   onSearchAuthorInArxiv?: (authorName: string) => void;
-  onSearchAuthorInInspire?: (authorName: string) => void;
+  onSearchAuthorInInspire?: (authorName: string, inspireRecid?: string) => void;
   className?: string;
 }
 
@@ -286,7 +286,7 @@ export function AuthorLinkList({
                     }}
                     className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
                   >
-                    Filter in arXiv Tab
+                    Open in arXiv Tab
                   </button>
                 )}
                 {onSearchAuthorInInspire && (
@@ -294,12 +294,13 @@ export function AuthorLinkList({
                     type="button"
                     onClick={() => {
                       const name = activeAuthor.name;
+                      const recid = resolution?.inspireRecid || activeAuthor.recid;
                       setActiveAuthor(null);
-                      onSearchAuthorInInspire(name);
+                      onSearchAuthorInInspire(name, recid);
                     }}
                     className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
                   >
-                    Search INSPIRE Tab
+                    Open in INSPIRE Tab
                   </button>
                 )}
               </div>

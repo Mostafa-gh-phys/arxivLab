@@ -22,6 +22,9 @@ export interface DnsFetchResponse {
   json: <T = unknown>() => T;
 }
 
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 16 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 16 });
+
 function createCustomLookup(servers: string[]): LookupFunction {
   const resolver = new Resolver();
   resolver.setServers(servers);
@@ -108,6 +111,7 @@ export async function dnsAwareRequest(
         method: options.method || 'GET',
         headers,
         timeout: timeoutMs,
+        agent: isHttps ? httpsAgent : httpAgent,
         ...(lookup ? { lookup } : {}),
       },
       (res) => {
@@ -151,6 +155,74 @@ export async function dnsAwareRequest(
     if (bodyBuffer !== undefined) {
       req.write(bodyBuffer);
     }
+    req.end();
+  });
+}
+
+export async function dnsAwareStreamRequest(
+  rawUrl: string,
+  options: DnsFetchOptions = {},
+  redirectCount = 0
+): Promise<{
+  status: number;
+  statusText: string;
+  headers: http.IncomingHttpHeaders;
+  finalUrl: string;
+  stream: http.IncomingMessage;
+}> {
+  if (redirectCount > 5) {
+    throw new Error('Too many HTTP redirects while streaming resource.');
+  }
+
+  const parsed = new URL(rawUrl);
+  const isHttps = parsed.protocol === 'https:';
+  const transport = isHttps ? https : http;
+  const servers = options.dnsServers || [];
+  const timeoutMs = options.timeoutMs ?? 30000;
+
+  const isLoopback =
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '::1';
+
+  const lookup = !isLoopback && servers.length > 0 ? createCustomLookup(servers) : undefined;
+  const headers: Record<string, string> = { ...(options.headers || {}) };
+
+  return new Promise((resolve, reject) => {
+    const req = transport.request(
+      parsed,
+      {
+        method: 'GET',
+        headers,
+        timeout: timeoutMs,
+        agent: isHttps ? httpsAgent : httpAgent,
+        ...(lookup ? { lookup } : {}),
+      },
+      (res) => {
+        const status = res.statusCode || 0;
+        const location = res.headers.location;
+        if (location && status >= 300 && status < 400) {
+          res.resume();
+          const nextUrl = new URL(location, parsed).toString();
+          dnsAwareStreamRequest(nextUrl, options, redirectCount + 1)
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+        resolve({
+          status,
+          statusText: res.statusMessage || '',
+          headers: res.headers,
+          finalUrl: parsed.toString(),
+          stream: res,
+        });
+      }
+    );
+
+    req.on('timeout', () => {
+      req.destroy(new Error(`Stream request timed out after ${timeoutMs}ms (${parsed.hostname})`));
+    });
+    req.on('error', reject);
     req.end();
   });
 }

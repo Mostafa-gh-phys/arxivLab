@@ -34,6 +34,8 @@ interface DesktopInfo {
     linuxAppImage: string;
     windowsExeInstaller: string;
     windowsExePortable: string;
+    macOsDmgArm64?: string;
+    macOsDmgX64?: string;
   };
   artifacts: Array<{ name: string; sizeBytes: number }>;
 }
@@ -338,10 +340,10 @@ export function SettingsView() {
         <div className="flex flex-wrap items-center justify-between gap-3 px-1">
           <div>
             <h2 id="desktop-heading" className="text-base font-semibold text-slate-900">
-              Desktop Installers (Linux AppImage &amp; Windows EXE)
+              Desktop Installers (Linux AppImage, Windows EXE &amp; macOS DMG)
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Package this workspace as a native Electron desktop application using the included builder configuration.
+              Package this workspace as a native Electron desktop application (v2.0.0) using the included builder configuration.
             </p>
           </div>
           <a
@@ -360,7 +362,7 @@ export function SettingsView() {
                 Linux AppImage (x86_64)
               </p>
               <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                Target: {desktopInfo?.targets.linuxAppImage || 'arXivLab-1.1.1-x86_64.AppImage'}
+                Target: {desktopInfo?.targets.linuxAppImage || 'arXivLab-2.0.0-x86_64.AppImage'}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -388,8 +390,8 @@ export function SettingsView() {
                 Windows Executable (.exe NSIS &amp; Portable)
               </p>
               <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                Targets: {desktopInfo?.targets.windowsExeInstaller || 'arXivLab-Setup-1.1.1.exe'} ·{' '}
-                {desktopInfo?.targets.windowsExePortable || 'arXivLab-Portable-1.1.1.exe'}
+                Targets: {desktopInfo?.targets.windowsExeInstaller || 'arXivLab-Setup-2.0.0.exe'} ·{' '}
+                {desktopInfo?.targets.windowsExePortable || 'arXivLab-Portable-2.0.0.exe'}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -403,6 +405,35 @@ export function SettingsView() {
                 className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
               >
                 {copiedCmd === 'win' ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-900">
+                macOS Disk Image &amp; Archive (.dmg &amp; .zip, Apple Silicon + Intel)
+              </p>
+              <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                Targets: {desktopInfo?.targets.macOsDmgArm64 || 'arXivLab-2.0.0-mac-arm64.dmg'} ·{' '}
+                {desktopInfo?.targets.macOsDmgX64 || 'arXivLab-2.0.0-mac-x64.dmg'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="rounded-md bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-slate-800">
+                npm run dist:mac
+              </code>
+              <button
+                type="button"
+                onClick={() => copyCommand('mac', 'npm run dist:mac')}
+                aria-label="Copy macOS DMG build command"
+                className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
+              >
+                {copiedCmd === 'mac' ? (
                   <Check className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
                 ) : (
                   <Copy className="h-3.5 w-3.5" aria-hidden="true" />
@@ -430,10 +461,11 @@ export function SettingsView() {
               <p className="leading-relaxed">
                 Electron wrapper (<span className="font-mono">electron/main.cjs</span>) and{' '}
                 <span className="font-mono">electron-builder.yml</span> are ready in your workspace. Run{' '}
-                <span className="font-mono text-slate-800">npm run dist:linux</span> on Linux or{' '}
-                <span className="font-mono text-slate-800">npm run dist:win</span> on Windows (or Linux with Wine) to output the{' '}
-                <span className="font-mono">.AppImage</span> and <span className="font-mono">.exe</span> binaries into{' '}
-                <span className="font-mono">release/</span>.
+                <span className="font-mono text-slate-800">npm run dist:linux</span>,{' '}
+                <span className="font-mono text-slate-800">npm run dist:win</span>, or{' '}
+                <span className="font-mono text-slate-800">npm run dist:mac</span> (or trigger the GitHub Actions workflow) to output{' '}
+                <span className="font-mono">.AppImage</span>, <span className="font-mono">.exe</span>, and{' '}
+                <span className="font-mono">.dmg</span> installers into <span className="font-mono">release/</span>.
               </p>
             )}
           </div>

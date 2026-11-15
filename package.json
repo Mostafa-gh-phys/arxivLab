@@ -1,8 +1,8 @@
 {
   "name": "arxivlab",
   "private": true,
-  "version": "1.1.1",
-  "description": "arXivLab desktop research workstation with Zotero sync, custom DNS, and MCP server",
+  "version": "2.0.0",
+  "description": "arXivLab desktop research workstation with Zotero sync, PDF preview, cloud backup, custom DNS, and MCP server",
   "author": "arXivLab",
   "type": "module",
   "main": "electron/main.cjs",
@@ -16,6 +16,7 @@
     "lint": "tsc --noEmit",
     "dist:linux": "npm run build && npm run build:server && npx --yes electron-builder --linux AppImage --publish never",
     "dist:win": "npm run build && npm run build:server && npx --yes electron-builder --win nsis portable --publish never",
+    "dist:mac": "npm run build && npm run build:server && npx --yes electron-builder --mac dmg zip --publish never",
     "dist:desktop": "npm run build && npm run build:server && npx --yes electron-builder --linux AppImage --win nsis portable --publish never"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "fast-xml-parser": "^5.12.1",
+    "firebase": "^13.3.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",

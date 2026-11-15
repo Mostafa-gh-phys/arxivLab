@@ -19,12 +19,19 @@ function stripTagsAndNormalize(html: string): string {
     .trim();
 }
 
+export function normalizeArxivCategoryCode(rawCategory: string): string {
+  const clean = (rawCategory || '').trim().replace(/^cat:/i, '');
+  if (!clean) return 'hep-th';
+  // Preserve dot-subcategory casing like cs.AI, stat.ML, physics.comp-ph, q-bio.BM
+  return clean;
+}
+
 export function buildArxivBrowseUrl(
   category: string,
   mode: ArxivBrowseMode,
   showCount = 100
 ): string {
-  const cleanCat = (category || 'hep-th').trim() || 'hep-th';
+  const cleanCat = normalizeArxivCategoryCode(category);
   const encodedCat = encodeURIComponent(cleanCat);
   const safeShow = Math.min(250, Math.max(25, showCount));
   if (mode === 'new') {

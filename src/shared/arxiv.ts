@@ -60,6 +60,53 @@ export function computeDateRangeFromPreset(
   };
 }
 
+export function buildSafePdfDownloadFilename(paperId: string, title?: string): string {
+  const baseId = (paperId || 'paper').trim().replace(/^arXiv:/i, '').replace(/[^a-zA-Z0-9._-]+/g, '_');
+  if (!title || !title.trim()) {
+    return `${baseId}.pdf`;
+  }
+  const cleanTitle = title
+    .trim()
+    .replace(/[^a-zA-Z0-9\s._-]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 72)
+    .trim();
+  return cleanTitle ? `${baseId} - ${cleanTitle}.pdf` : `${baseId}.pdf`;
+}
+
+export function buildArxivAuthorSearchClause(rawAuthor: string): string {
+  const cleaned = rawAuthor
+    .replace(/"/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+
+  // Handle "Last, First Middle" -> "First Last" or phrase
+  let normalized = cleaned;
+  if (cleaned.includes(',')) {
+    const [last, ...rest] = cleaned.split(',');
+    const firstPart = rest.join(' ').trim();
+    normalized = firstPart ? `${firstPart} ${last.trim()}` : last.trim();
+  }
+
+  // Drop single-letter middle initials like "M." or "A." that frequently mismatch arXiv Atom au queries
+  const tokens = normalized
+    .split(/\s+/)
+    .map((t) => t.replace(/\.$/, '').trim())
+    .filter(Boolean);
+
+  if (tokens.length <= 1) {
+    return `au:${tokens[0] || normalized}`;
+  }
+
+  const meaningful = tokens.filter((t, idx) => idx === tokens.length - 1 || t.length > 1);
+  if (meaningful.length >= 2) {
+    return `au:"${meaningful.join(' ')}"`;
+  }
+  return `au:"${tokens.join(' ')}"`;
+}
+
 export function buildArxivQueryUrl(params: ArxivSearchParams): string {
   const url = new URL(ARXIV_API_BASE);
   const clauses: string[] = [];
@@ -85,15 +132,20 @@ export function buildArxivQueryUrl(params: ArxivSearchParams): string {
       return url.toString();
     }
 
-    const prefix = field === 'all' ? 'all' : field;
-    const tokens = queryText
-      .split(/\s+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-    if (tokens.length === 1) {
-      clauses.push(`${prefix}:${tokens[0]}`);
-    } else if (tokens.length > 1) {
-      clauses.push(`(${tokens.map((t) => `${prefix}:${t}`).join(' AND ')})`);
+    if (field === 'au') {
+      const auClause = buildArxivAuthorSearchClause(queryText);
+      if (auClause) clauses.push(auClause);
+    } else {
+      const prefix = field === 'all' ? 'all' : field;
+      const tokens = queryText
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      if (tokens.length === 1) {
+        clauses.push(`${prefix}:${tokens[0]}`);
+      } else if (tokens.length > 1) {
+        clauses.push(`(${tokens.map((t) => `${prefix}:${t}`).join(' AND ')})`);
+      }
     }
   }
 

@@ -38,5 +38,15 @@ portable:
 mac:
   icon: build/icon.png
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
   category: public.app-category.education
+  artifactName: "arXivLab-${version}-mac-${arch}.${ext}"
+  identity: null
+
