@@ -1,10 +1,18 @@
+import { Capacitor } from '@capacitor/core';
 import { buildSafePdfDownloadFilename } from './arxiv';
 import type { ArxivPaper } from './types';
 
 export function buildPdfEndpointUrl(
-  paper: Pick<ArxivPaper, 'id' | 'title'>,
+  paper: Pick<ArxivPaper, 'id' | 'title'> & { pdfUrl?: string },
   options: { save?: boolean; view?: boolean } = {}
 ): string {
+  if (Capacitor.isNativePlatform()) {
+    if (paper.pdfUrl && /^https?:\/\//i.test(paper.pdfUrl)) {
+      return paper.pdfUrl;
+    }
+    const cleanId = paper.id.replace(/^arXiv:/i, '').replace(/v\d+$/i, '');
+    return `https://arxiv.org/pdf/${cleanId}`;
+  }
   const qs = new URLSearchParams({
     id: paper.id,
     save: options.save === false ? '0' : '1',
@@ -17,7 +25,7 @@ export function buildPdfEndpointUrl(
 }
 
 export async function triggerPaperPdfDownload(
-  paper: Pick<ArxivPaper, 'id' | 'title'>
+  paper: Pick<ArxivPaper, 'id' | 'title'> & { pdfUrl?: string }
 ): Promise<{ fileName: string; sizeBytes: number }> {
   const url = buildPdfEndpointUrl(paper, { save: true, view: false });
   const res = await fetch(url, { cache: 'no-store' });

@@ -4,6 +4,8 @@ import { CloudSyncView } from './components/CloudSyncView';
 import { InspireWorkspace } from './components/InspireWorkspace';
 import { LibraryView } from './components/LibraryView';
 import { McpModeView } from './components/McpModeView';
+import { MobileBottomNav } from './components/MobileBottomNav';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { SearchWorkspace } from './components/SearchWorkspace';
 import { SettingsView } from './components/SettingsView';
 import { TopBar, type WorkspaceTab } from './components/TopBar';
@@ -48,6 +50,42 @@ export default function App() {
     type: 'ok' | 'error';
     text: string;
   } | null>(null);
+
+  // Track desktop (>=1280px) docked inspector vs phone fullscreen drawer behavior
+  const [isDesktopLayout, setIsDesktopLayout] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1280 : false
+  );
+  const explicitSelectionRef = useRef({ search: false, inspire: false });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(min-width: 1280px)');
+    const syncBreakpoint = (matches: boolean) => {
+      setIsDesktopLayout(matches);
+      if (!matches) {
+        if (!explicitSelectionRef.current.search) {
+          setSelectedPaper(null);
+        }
+        if (!explicitSelectionRef.current.inspire) {
+          setSelectedInspirePaper(null);
+        }
+      }
+    };
+    syncBreakpoint(mq.matches);
+    const listener = (event: MediaQueryListEvent) => syncBreakpoint(event.matches);
+    mq.addEventListener('change', listener);
+    return () => mq.removeEventListener('change', listener);
+  }, []);
+
+  const handleSelectSearchPaper = useCallback((paper: ArxivPaper | null) => {
+    explicitSelectionRef.current.search = Boolean(paper);
+    setSelectedPaper(paper);
+  }, []);
+
+  const handleSelectInspirePaper = useCallback((paper: ArxivPaper | null) => {
+    explicitSelectionRef.current.inspire = Boolean(paper);
+    setSelectedInspirePaper(paper);
+  }, []);
 
   // Sequence guards prevent out-of-order responses when switching categories or authors rapidly
   const arxivReqSeqRef = useRef(0);
@@ -97,11 +135,11 @@ export default function App() {
         const typed = data as ArxivSearchResult;
         setSearchResult(typed);
         if (window.innerWidth >= 1280) {
-          setSelectedPaper((curr) =>
-            curr && typed.papers.some((p) => p.id === curr.id)
-              ? curr
-              : typed.papers[0] || null
-          );
+          setSelectedPaper((curr) => {
+            if (curr && typed.papers.some((p) => p.id === curr.id)) return curr;
+            explicitSelectionRef.current.search = false;
+            return typed.papers[0] || null;
+          });
         }
       } catch (err: unknown) {
         if (seq === arxivReqSeqRef.current) {
@@ -134,11 +172,11 @@ export default function App() {
       const typed = data as ArxivSearchResult;
       setSearchResult(typed);
       if (window.innerWidth >= 1280) {
-        setSelectedPaper((curr) =>
-          curr && typed.papers.some((p) => p.id === curr.id)
-            ? curr
-            : typed.papers[0] || null
-        );
+        setSelectedPaper((curr) => {
+          if (curr && typed.papers.some((p) => p.id === curr.id)) return curr;
+          explicitSelectionRef.current.search = false;
+          return typed.papers[0] || null;
+        });
       }
     } catch (err: unknown) {
       if (seq === arxivReqSeqRef.current) {
@@ -169,11 +207,11 @@ export default function App() {
       const typed = data as InspireLiteratureResult;
       setInspireLitResult(typed);
       if (window.innerWidth >= 1280) {
-        setSelectedInspirePaper((curr) =>
-          curr && typed.papers.some((p) => p.id === curr.id)
-            ? curr
-            : typed.papers[0] || null
-        );
+        setSelectedInspirePaper((curr) => {
+          if (curr && typed.papers.some((p) => p.id === curr.id)) return curr;
+          explicitSelectionRef.current.inspire = false;
+          return typed.papers[0] || null;
+        });
       }
     } catch (err: unknown) {
       if (seq === inspireReqSeqRef.current) {
@@ -349,7 +387,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-[1440px] px-3 py-4 pb-24 sm:px-6 sm:py-6 md:pb-8">
         {activeTab === 'search' && (
           <SearchWorkspace
             searchResult={searchResult}
@@ -357,7 +395,7 @@ export default function App() {
             error={searchError}
             savedIds={savedIds}
             selectedPaper={selectedPaper}
-            onSelectPaper={setSelectedPaper}
+            onSelectPaper={handleSelectSearchPaper}
             onRunSearch={runSearch}
             onRunBrowse={runBrowse}
             onSavePaper={handleSavePaper}
@@ -376,7 +414,7 @@ export default function App() {
             error={inspireError}
             savedIds={savedIds}
             selectedPaper={selectedInspirePaper}
-            onSelectPaper={setSelectedInspirePaper}
+            onSelectPaper={handleSelectInspirePaper}
             onRunLiteratureSearch={runInspireLiterature}
             onRunJobsSearch={runInspireJobs}
             onSavePaper={handleSavePaper}
@@ -390,7 +428,7 @@ export default function App() {
         {activeTab === 'library' && (
           <LibraryView
             papers={savedPapers}
-            selectedPaper={selectedLibraryPaper || savedPapers[0] || null}
+            selectedPaper={selectedLibraryPaper || (isDesktopLayout ? savedPapers[0] || null : null)}
             onSelectPaper={setSelectedLibraryPaper}
             onUpdatePaperMeta={handleUpdatePaperMeta}
             onDeletePaper={handleDeletePaper}
@@ -413,6 +451,14 @@ export default function App() {
 
         {activeTab === 'settings' && <SettingsView />}
       </main>
+
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        savedCount={savedPapers.length}
+      />
+
+      <OfflineIndicator />
 
       <AddByIdModal
         open={addByIdOpen}

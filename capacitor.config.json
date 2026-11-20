@@ -1,0 +1,19 @@
+{
+  "appId": "org.arxivlab.workstation",
+  "appName": "arXivLab",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#f5f5f7"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "SplashScreen": {
+      "backgroundColor": "#0D121C",
+      "launchShowDuration": 600,
+      "showSpinner": false
+    }
+  }
+}

@@ -6,6 +6,7 @@ import {
   Loader2,
   RotateCcw,
   Search,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { computeDateRangeFromPreset } from '../shared/arxiv';
 import { triggerPaperPdfDownload } from '../shared/download';
@@ -102,6 +103,7 @@ export function SearchWorkspace({
   const [maxResults, setMaxResults] = useState(15);
   const [activeAuthorBanner, setActiveAuthorBanner] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     if (pendingAuthorQuery) {
@@ -258,9 +260,80 @@ export function SearchWorkspace({
   };
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+      {/* Phone Quick Search & Scope Bar (hidden on lg+) */}
+      <div className="space-y-2.5 rounded-xl border border-black/[0.08] bg-white p-3.5 lg:hidden">
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+              aria-hidden="true"
+            />
+            <input
+              type="text"
+              aria-label="Quick search arXiv"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={
+                isMailingScope ? 'Filter mailing papers...' : 'Search arXiv keywords, author, ID...'
+              }
+              className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pr-3 pl-8 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:bg-white focus:outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="min-h-[40px] shrink-0 rounded-lg bg-blue-700 px-3.5 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+          >
+            {loading ? '...' : 'Go'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen((v) => !v)}
+            aria-expanded={mobileFiltersOpen}
+            aria-label="Toggle arXiv search filters"
+            className={`inline-flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
+              mobileFiltersOpen
+                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Filters</span>
+          </button>
+        </form>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          {FEED_SCOPES.map((item) => {
+            const active = feedScope === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => handleFeedScopeChange(item.id)}
+                className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
+                  active
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+          <span className="ml-auto shrink-0 font-mono text-[10px] text-slate-500">
+            {selectedCategories.join(', ') || 'all'}
+          </span>
+        </div>
+      </div>
+
       {/* Left Unified arXiv Query & Mailing Column */}
-      <aside className="w-full shrink-0 rounded-xl border border-black/[0.08] bg-white p-5 lg:w-80">
+      <aside
+        className={`${
+          mobileFiltersOpen ? 'block' : 'hidden'
+        } lg:block w-full shrink-0 rounded-xl border border-black/[0.08] bg-white p-5 lg:w-80`}
+      >
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h1 className="text-sm font-semibold text-slate-900">arXiv Search &amp; Mailings</h1>
           <button

@@ -105,7 +105,7 @@ export function LibraryView({
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
             <h1 className="text-base font-semibold text-slate-900">
-              Saved Linux Paper Library
+              Saved Paper Library
             </h1>
             <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
               {papers.length} persisted paper{papers.length === 1 ? '' : 's'} shared with MCP agents

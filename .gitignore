@@ -11,3 +11,8 @@ coverage/
 dist-electron/
 release/
 .playwright-cli/
+android/
+assets/
+*.jks
+*.keystore
+play-service-account.json

@@ -8,6 +8,7 @@ import {
   Loader2,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import { triggerPaperPdfDownload } from '../shared/download';
@@ -93,6 +94,7 @@ export function InspireWorkspace({
     inspireRecid?: string;
   } | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     if (pendingAuthorQuery) {
@@ -230,9 +232,87 @@ export function InspireWorkspace({
   };
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+      {/* Phone Quick Search & Dataset Toggle (hidden on lg+) */}
+      <div className="space-y-2.5 rounded-xl border border-black/[0.08] bg-white p-3.5 lg:hidden">
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => handleModeSwitch('literature')}
+            aria-pressed={sectionMode === 'literature'}
+            className={`min-h-[34px] rounded-md text-xs font-medium transition-colors ${
+              sectionMode === 'literature'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600'
+            }`}
+          >
+            Literature
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeSwitch('jobs')}
+            aria-pressed={sectionMode === 'jobs'}
+            className={`min-h-[34px] rounded-md text-xs font-medium transition-colors ${
+              sectionMode === 'jobs'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600'
+            }`}
+          >
+            Jobs
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+              aria-hidden="true"
+            />
+            <input
+              type="text"
+              aria-label="Quick search INSPIRE-HEP"
+              value={sectionMode === 'jobs' ? jobQuery : query}
+              onChange={(e) =>
+                sectionMode === 'jobs' ? setJobQuery(e.target.value) : setQuery(e.target.value)
+              }
+              placeholder={
+                sectionMode === 'jobs'
+                  ? 'Search postdoc, faculty, PhD jobs...'
+                  : 'Keywords, author, INSPIRE syntax...'
+              }
+              className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pr-3 pl-8 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:bg-white focus:outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="min-h-[40px] shrink-0 rounded-lg bg-blue-700 px-3.5 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+          >
+            {loading ? '...' : 'Go'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen((v) => !v)}
+            aria-expanded={mobileFiltersOpen}
+            aria-label="Toggle INSPIRE filters"
+            className={`inline-flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium ${
+              mobileFiltersOpen
+                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                : 'border-slate-200 bg-white text-slate-700'
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Filters</span>
+          </button>
+        </form>
+      </div>
+
       {/* Left INSPIRE-HEP Query Column */}
-      <aside className="w-full shrink-0 rounded-xl border border-black/[0.08] bg-white p-5 lg:w-80">
+      <aside
+        className={`${
+          mobileFiltersOpen ? 'block' : 'hidden'
+        } lg:block w-full shrink-0 rounded-xl border border-black/[0.08] bg-white p-5 lg:w-80`}
+      >
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h1 className="text-sm font-semibold text-slate-900">INSPIRE-HEP Query</h1>
           <button

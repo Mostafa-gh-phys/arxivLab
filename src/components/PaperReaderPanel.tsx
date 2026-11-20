@@ -154,7 +154,7 @@ export function PaperReaderPanel({
     <>
       <aside
         aria-label={`Paper details for ${paper.title}`}
-        className="fixed top-13 bottom-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-black/[0.08] bg-white shadow-xl xl:sticky xl:top-16 xl:bottom-auto xl:right-auto xl:z-auto xl:max-h-[calc(100vh-5.5rem)] xl:w-[440px] xl:max-w-none xl:shrink-0 xl:rounded-xl xl:border xl:shadow-none"
+        className="fixed inset-0 z-50 flex w-full flex-col bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-xl sm:left-auto sm:max-w-md sm:border-l sm:border-black/[0.08] xl:sticky xl:inset-auto xl:top-16 xl:z-auto xl:max-h-[calc(100vh-5.5rem)] xl:w-[440px] xl:max-w-none xl:shrink-0 xl:rounded-xl xl:border xl:pt-0 xl:pb-0 xl:shadow-none"
       >
         <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-3.5">
           <span className="font-mono text-xs font-medium text-slate-600 tabular-nums">
@@ -403,16 +403,27 @@ export function PaperReaderPanel({
 
           {activeSubView === 'pdf' && (
             <div className="mt-4 space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-600">Inline PDF Preview</span>
-                <button
-                  type="button"
-                  onClick={() => setPreviewModalOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
-                >
-                  <Maximize2 className="h-3 w-3" aria-hidden="true" />
-                  <span>Expand Full Reader</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={paper.pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    <span>Open PDF</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewModalOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
+                  >
+                    <Maximize2 className="h-3 w-3" aria-hidden="true" />
+                    <span>Expand Full Reader</span>
+                  </button>
+                </div>
               </div>
               <div className="relative h-[460px] overflow-hidden rounded-lg border border-slate-200 bg-slate-800">
                 {!pdfFrameLoaded && (
