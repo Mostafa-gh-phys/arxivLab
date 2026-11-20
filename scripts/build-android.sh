@@ -24,7 +24,7 @@ npx --yes @capacitor/assets generate --android || true
 
 # Ensure versionName and versionCode match package.json cleanly
 PKG_VERSION="$(node -p "require('./package.json').version")"
-VERSION_CODE="${ANDROID_VERSION_CODE:-20000}"
+VERSION_CODE="${ANDROID_VERSION_CODE:-$((20000 + ${GITHUB_RUN_NUMBER:-0}))}"
 if [ -f "android/app/build.gradle" ]; then
   sed -i -E "s/versionCode [0-9]+/versionCode ${VERSION_CODE}/" android/app/build.gradle
   sed -i -E "s/versionName \"[^\"]+\"/versionName \"${PKG_VERSION}\"/" android/app/build.gradle
