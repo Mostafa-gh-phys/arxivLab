@@ -18,9 +18,11 @@ import type {
   InspireJobsParams,
   InspireLiteratureParams,
   McpConfig,
+  PdfHighlight,
   SavedPaper,
   ZoteroConfig,
 } from './src/shared/types';
+import { mergeHighlights } from './src/shared/highlights';
 import {
   browseArxiv,
   downloadPaperPdf,
@@ -464,11 +466,20 @@ async function startServer(): Promise<void> {
       const baseTags = Array.isArray(body.tags) ? body.tags.map(String) : prev?.tags || [];
       const mergedTags = Array.from(new Set([...baseTags, ...docTypeTags])).filter(Boolean);
 
+      const incomingHighlights = Array.isArray(body.highlights)
+        ? (body.highlights as PdfHighlight[])
+        : Array.isArray((enrichedPaper as Partial<SavedPaper>).highlights)
+          ? ((enrichedPaper as Partial<SavedPaper>).highlights as PdfHighlight[])
+          : undefined;
+
       const savedEntry: SavedPaper = {
         ...enrichedPaper,
         savedAt: prev?.savedAt || new Date().toISOString(),
         tags: mergedTags,
         notes: typeof body.notes === 'string' ? body.notes : prev?.notes || '',
+        highlights: incomingHighlights
+          ? mergeHighlights(prev?.highlights, incomingHighlights)
+          : prev?.highlights || [],
         zoteroItemKey: prev?.zoteroItemKey,
         zoteroSyncedAt: prev?.zoteroSyncedAt,
         fullTextCached: prev?.fullTextCached,
@@ -511,6 +522,9 @@ async function startServer(): Promise<void> {
         ...target,
         tags: Array.isArray(body.tags) ? body.tags.map(String) : target.tags,
         notes: typeof body.notes === 'string' ? body.notes : target.notes,
+        highlights: Array.isArray(body.highlights)
+          ? (body.highlights as PdfHighlight[])
+          : target.highlights || [],
       };
       const papers = await upsertSavedPaper(updated);
       res.json({ papers, savedPaper: updated });

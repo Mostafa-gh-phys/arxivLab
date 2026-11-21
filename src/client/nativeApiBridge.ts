@@ -20,6 +20,7 @@ import {
   parseInspireJobsResponse,
   parseInspireLiteratureResponse,
 } from '../shared/inspire';
+import { mergeHighlights } from '../shared/highlights';
 import type { NetworkConfig } from '../shared/network';
 import type {
   ArxivBrowseParams,
@@ -30,6 +31,7 @@ import type {
   InspireJobsParams,
   InspireLiteratureParams,
   McpConfig,
+  PdfHighlight,
   SavedPaper,
   ZoteroConfig,
 } from '../shared/types';
@@ -185,6 +187,9 @@ function mergePapersIntoLibrary(
         id: normId,
         tags: mergedTags,
         notes: item.notes ?? prev.notes ?? '',
+        highlights: item.highlights
+          ? mergeHighlights(prev.highlights, item.highlights)
+          : prev.highlights || [],
         savedAt: prev.savedAt,
       } as SavedPaper);
       updated++;
@@ -205,6 +210,7 @@ function mergePapersIntoLibrary(
         savedAt: item.savedAt || new Date().toISOString(),
         tags: mergedTags,
         notes: item.notes || '',
+        highlights: Array.isArray(item.highlights) ? item.highlights : [],
       });
       added++;
     }
@@ -435,8 +441,16 @@ export async function handleNativeApiRequest(
   if (pathname === '/api/library' && method === 'POST') {
     const rawPaper = (bodyJson.paper || bodyJson) as Partial<SavedPaper> & Pick<ArxivPaper, 'id' | 'title'>;
     if (!rawPaper?.id) return jsonResponse({ error: 'Invalid paper payload.' }, 400);
+    const incomingHighlights = Array.isArray(bodyJson.highlights)
+      ? (bodyJson.highlights as PdfHighlight[])
+      : rawPaper.highlights;
     const current = readNativeLibrary(storage);
-    const { papers } = mergePapersIntoLibrary(current, [rawPaper]);
+    const { papers } = mergePapersIntoLibrary(current, [
+      {
+        ...rawPaper,
+        highlights: incomingHighlights,
+      },
+    ]);
     writeNativeLibrary(papers, storage);
     const savedPaper = papers.find((p) => p.id === (normalizePaperId(rawPaper.id) || rawPaper.id));
     return jsonResponse({ ok: true, savedPaper, papers });
@@ -446,12 +460,16 @@ export async function handleNativeApiRequest(
     const id = String(bodyJson.id || '');
     const tags = Array.isArray(bodyJson.tags) ? (bodyJson.tags as string[]) : undefined;
     const notes = typeof bodyJson.notes === 'string' ? bodyJson.notes : undefined;
+    const highlights = Array.isArray(bodyJson.highlights)
+      ? (bodyJson.highlights as PdfHighlight[])
+      : undefined;
     const next = readNativeLibrary(storage).map((p) =>
       p.id === id
         ? {
             ...p,
             tags: tags ?? p.tags,
             notes: notes ?? p.notes,
+            highlights: highlights ?? p.highlights ?? [],
           }
         : p
     );

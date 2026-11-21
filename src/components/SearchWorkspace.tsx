@@ -19,6 +19,7 @@ import {
   type ArxivSearchField,
   type ArxivSearchResult,
   type ArxivSortBy,
+  type PdfHighlight,
   type SavedPaper,
 } from '../shared/types';
 import { AuthorLinkList } from './AuthorLinkList';
@@ -32,6 +33,7 @@ interface SearchWorkspaceProps {
   loading: boolean;
   error: string | null;
   savedIds: Set<string>;
+  savedById?: Map<string, SavedPaper>;
   selectedPaper: ArxivPaper | SavedPaper | null;
   onSelectPaper: (paper: ArxivPaper | null) => void;
   onRunSearch: (params: {
@@ -44,7 +46,8 @@ interface SearchWorkspaceProps {
     maxResults: number;
   }) => Promise<void>;
   onRunBrowse: (params: ArxivBrowseParams) => Promise<void>;
-  onSavePaper: (paper: ArxivPaper) => Promise<void>;
+  onSavePaper: (paper: ArxivPaper, highlights?: PdfHighlight[]) => Promise<void>;
+  onSaveHighlights?: (paper: ArxivPaper, highlights: PdfHighlight[]) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
   onSearchAuthorInInspire?: (authorName: string, inspireRecid?: string) => void;
   pendingAuthorQuery?: string | null;
@@ -80,11 +83,13 @@ export function SearchWorkspace({
   loading,
   error,
   savedIds,
+  savedById,
   selectedPaper,
   onSelectPaper,
   onRunSearch,
   onRunBrowse,
   onSavePaper,
+  onSaveHighlights,
   onSyncZotero,
   onSearchAuthorInInspire,
   pendingAuthorQuery,
@@ -841,8 +846,10 @@ export function SearchWorkspace({
       <PaperReaderPanel
         paper={selectedPaper}
         isSaved={selectedPaper ? savedIds.has(selectedPaper.id) : false}
+        savedHighlights={selectedPaper ? savedById?.get(selectedPaper.id)?.highlights : undefined}
         onClose={() => onSelectPaper(null)}
         onSavePaper={onSavePaper}
+        onSaveHighlights={onSaveHighlights}
         onSyncZotero={onSyncZotero}
         onSearchAuthorInArxiv={handleSearchAuthorHere}
         onSearchAuthorInInspire={onSearchAuthorInInspire}

@@ -8,6 +8,7 @@ import type {
   SavedPaper,
   ZoteroConfig,
 } from '../shared/types';
+import { mergeHighlights } from '../shared/highlights';
 import type { NetworkConfig } from '../shared/network';
 
 export const DATA_DIR = path.resolve(process.cwd(), '.arxiv-mcp-data');
@@ -252,6 +253,7 @@ export async function mergeImportedLibrary(incomingPapers: SavedPaper[]): Promis
         ...prev,
         tags: mergedTags,
         notes: mergedNotes,
+        highlights: mergeHighlights(prev.highlights, item.highlights),
       });
       updated += 1;
     }

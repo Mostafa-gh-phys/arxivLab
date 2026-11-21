@@ -21,3 +21,31 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Scoped PDF.js text layer styling for accurate text selection & highlights */
+.axl-pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+}
+
+.axl-pdf-text-layer span,
+.axl-pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.axl-pdf-text-layer ::selection {
+  background: rgba(59, 130, 246, 0.28);
+  color: transparent;
+}
+

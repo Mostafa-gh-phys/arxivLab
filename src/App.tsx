@@ -20,6 +20,7 @@ import type {
   InspireJobsResult,
   InspireLiteratureParams,
   InspireLiteratureResult,
+  PdfHighlight,
   SavedPaper,
 } from './shared/types';
 
@@ -92,6 +93,10 @@ export default function App() {
   const inspireReqSeqRef = useRef(0);
 
   const savedIds = useMemo(() => new Set(savedPapers.map((p) => p.id)), [savedPapers]);
+  const savedById = useMemo(
+    () => new Map(savedPapers.map((p) => [p.id, p])),
+    [savedPapers]
+  );
 
   const showNotice = useCallback((type: 'ok' | 'error', text: string) => {
     setBannerMessage({ type, text });
@@ -295,11 +300,11 @@ export default function App() {
   const clearPendingArxivAuthor = useCallback(() => setPendingArxivAuthor(null), []);
   const clearPendingInspireAuthor = useCallback(() => setPendingInspireAuthor(null), []);
 
-  const handleSavePaper = async (paper: ArxivPaper) => {
+  const handleSavePaper = async (paper: ArxivPaper, highlights?: PdfHighlight[]) => {
     const res = await fetch('/api/library', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paper }),
+      body: JSON.stringify({ paper, highlights }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -320,6 +325,27 @@ export default function App() {
         ? `Saved ${label}${docTagPreview} · ${data.zoteroSyncMessage}`
         : `Saved ${label}${docTagPreview} to library.`
     );
+  };
+
+  const handleSaveHighlights = async (paper: ArxivPaper, highlights: PdfHighlight[]) => {
+    if (savedIds.has(paper.id)) {
+      const res = await fetch('/api/library/update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: paper.id, highlights }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showNotice('error', data.error || 'Could not update PDF highlights.');
+        throw new Error(data.error || 'Could not update PDF highlights.');
+      }
+      if (Array.isArray(data.papers)) {
+        setSavedPapers(data.papers);
+      }
+      return;
+    }
+
+    await handleSavePaper(paper, highlights);
   };
 
   const handleUpdatePaperMeta = async (id: string, tags: string[], notes: string) => {
@@ -394,11 +420,13 @@ export default function App() {
             loading={searching}
             error={searchError}
             savedIds={savedIds}
+            savedById={savedById}
             selectedPaper={selectedPaper}
             onSelectPaper={handleSelectSearchPaper}
             onRunSearch={runSearch}
             onRunBrowse={runBrowse}
             onSavePaper={handleSavePaper}
+            onSaveHighlights={handleSaveHighlights}
             onSyncZotero={handleSyncZotero}
             onSearchAuthorInInspire={handleSearchAuthorInInspire}
             pendingAuthorQuery={pendingArxivAuthor}
@@ -413,11 +441,13 @@ export default function App() {
             loading={inspireLoading}
             error={inspireError}
             savedIds={savedIds}
+            savedById={savedById}
             selectedPaper={selectedInspirePaper}
             onSelectPaper={handleSelectInspirePaper}
             onRunLiteratureSearch={runInspireLiterature}
             onRunJobsSearch={runInspireJobs}
             onSavePaper={handleSavePaper}
+            onSaveHighlights={handleSaveHighlights}
             onSyncZotero={handleSyncZotero}
             onSearchAuthorInArxiv={handleSearchAuthorInArxiv}
             pendingAuthorQuery={pendingInspireAuthor}
@@ -428,9 +458,16 @@ export default function App() {
         {activeTab === 'library' && (
           <LibraryView
             papers={savedPapers}
-            selectedPaper={selectedLibraryPaper || (isDesktopLayout ? savedPapers[0] || null : null)}
+            selectedPaper={
+              selectedLibraryPaper
+                ? savedById.get(selectedLibraryPaper.id) || selectedLibraryPaper
+                : isDesktopLayout
+                  ? savedPapers[0] || null
+                  : null
+            }
             onSelectPaper={setSelectedLibraryPaper}
             onUpdatePaperMeta={handleUpdatePaperMeta}
+            onSaveHighlights={handleSaveHighlights}
             onDeletePaper={handleDeletePaper}
             onSyncZotero={handleSyncZotero}
             onGoToSearch={() => setActiveTab('search')}

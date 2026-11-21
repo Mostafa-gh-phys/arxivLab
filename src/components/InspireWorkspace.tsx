@@ -30,6 +30,7 @@ import type {
   InspireLiteratureResult,
   InspireSearchField,
   InspireSortBy,
+  PdfHighlight,
   SavedPaper,
 } from '../shared/types';
 import { AuthorLinkList } from './AuthorLinkList';
@@ -42,11 +43,13 @@ interface InspireWorkspaceProps {
   loading: boolean;
   error: string | null;
   savedIds: Set<string>;
+  savedById?: Map<string, SavedPaper>;
   selectedPaper: ArxivPaper | SavedPaper | null;
   onSelectPaper: (paper: ArxivPaper | null) => void;
   onRunLiteratureSearch: (params: InspireLiteratureParams) => Promise<void>;
   onRunJobsSearch: (params: InspireJobsParams) => Promise<void>;
-  onSavePaper: (paper: ArxivPaper) => Promise<void>;
+  onSavePaper: (paper: ArxivPaper, highlights?: PdfHighlight[]) => Promise<void>;
+  onSaveHighlights?: (paper: ArxivPaper, highlights: PdfHighlight[]) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
   onSearchAuthorInArxiv?: (authorName: string) => void;
   pendingAuthorQuery?: { name: string; inspireRecid?: string } | null;
@@ -59,11 +62,13 @@ export function InspireWorkspace({
   loading,
   error,
   savedIds,
+  savedById,
   selectedPaper,
   onSelectPaper,
   onRunLiteratureSearch,
   onRunJobsSearch,
   onSavePaper,
+  onSaveHighlights,
   onSyncZotero,
   onSearchAuthorInArxiv,
   pendingAuthorQuery,
@@ -903,8 +908,10 @@ export function InspireWorkspace({
         <PaperReaderPanel
           paper={selectedPaper}
           isSaved={selectedPaper ? savedIds.has(selectedPaper.id) : false}
+          savedHighlights={selectedPaper ? savedById?.get(selectedPaper.id)?.highlights : undefined}
           onClose={() => onSelectPaper(null)}
           onSavePaper={onSavePaper}
+          onSaveHighlights={onSaveHighlights}
           onSyncZotero={onSyncZotero}
           onSearchAuthorInArxiv={onSearchAuthorInArxiv}
           onSearchAuthorInInspire={handleSearchAuthorHere}

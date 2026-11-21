@@ -8,23 +8,34 @@ import {
   Eye,
   ExternalLink,
   FileText,
+  Highlighter,
   Loader2,
   Maximize2,
   Send,
+  SquareDashedMousePointer,
   X,
 } from 'lucide-react';
 import { paperToBibtex } from '../shared/citations';
 import { buildPdfEndpointUrl, triggerPaperPdfDownload } from '../shared/download';
+import { HIGHLIGHT_PALETTE, upsertHighlight } from '../shared/highlights';
 import { mapInspireDocumentTypesToTags } from '../shared/inspire';
-import type { ArxivPaper, SavedPaper } from '../shared/types';
+import type {
+  ArxivPaper,
+  PdfHighlight,
+  PdfHighlightColor,
+  SavedPaper,
+} from '../shared/types';
 import { AuthorLinkList } from './AuthorLinkList';
+import { PdfCanvasViewer, type PdfViewerToolMode } from './PdfCanvasViewer';
 import { PdfPreviewModal } from './PdfPreviewModal';
 
 interface PaperReaderPanelProps {
   paper: ArxivPaper | SavedPaper | null;
   isSaved: boolean;
+  savedHighlights?: PdfHighlight[];
   onClose: () => void;
-  onSavePaper: (paper: ArxivPaper) => Promise<void>;
+  onSavePaper: (paper: ArxivPaper, highlights?: PdfHighlight[]) => Promise<void>;
+  onSaveHighlights?: (paper: ArxivPaper, highlights: PdfHighlight[]) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
   onSearchAuthorInArxiv?: (authorName: string) => void;
   onSearchAuthorInInspire?: (authorName: string) => void;
@@ -33,8 +44,10 @@ interface PaperReaderPanelProps {
 export function PaperReaderPanel({
   paper,
   isSaved,
+  savedHighlights,
   onClose,
   onSavePaper,
+  onSaveHighlights,
   onSyncZotero,
   onSearchAuthorInArxiv,
   onSearchAuthorInInspire,
@@ -50,7 +63,9 @@ export function PaperReaderPanel({
   const [zoteroFeedback, setZoteroFeedback] = useState<string | null>(null);
   const [copiedBibtex, setCopiedBibtex] = useState(false);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
-  const [pdfFrameLoaded, setPdfFrameLoaded] = useState(false);
+  const [inlineTool, setInlineTool] = useState<PdfViewerToolMode>('highlight_text');
+  const [inlineColor, setInlineColor] = useState<PdfHighlightColor>('amber');
+  const [inlineFeedback, setInlineFeedback] = useState<string | null>(null);
   const [activeSubView, setActiveSubView] = useState<
     'overview' | 'pdf' | 'fulltext' | 'bibtex'
   >('overview');
@@ -61,7 +76,7 @@ export function PaperReaderPanel({
     setTextError(null);
     setDownloadFeedback(null);
     setZoteroFeedback(null);
-    setPdfFrameLoaded(false);
+    setInlineFeedback(null);
     setActiveSubView('overview');
   }, [paper?.id]);
 
@@ -71,11 +86,15 @@ export function PaperReaderPanel({
         <FileText className="h-8 w-8 text-slate-300" aria-hidden="true" />
         <p className="mt-3 text-sm font-semibold text-slate-800">Select a paper to inspect</p>
         <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-500">
-          Choose any entry from the results or library to read its abstract, preview the PDF in-app, copy BibTeX, or push to Zotero.
+          Choose any entry from the results or library to read its abstract, highlight the PDF in-app, copy BibTeX, or push to Zotero.
         </p>
       </aside>
     );
   }
+
+  const resolvedHighlights: PdfHighlight[] =
+    savedHighlights ??
+    ('highlights' in paper && Array.isArray(paper.highlights) ? paper.highlights : []);
 
   const handleLoadFullText = async () => {
     setActiveSubView('fulltext');
@@ -120,7 +139,7 @@ export function PaperReaderPanel({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSavePaper(paper);
+      await onSavePaper(paper, resolvedHighlights);
     } finally {
       setSaving(false);
     }
@@ -145,10 +164,30 @@ export function PaperReaderPanel({
     setTimeout(() => setCopiedBibtex(false), 1800);
   };
 
+  const handleInlineAddHighlight = async (item: Omit<PdfHighlight, 'id' | 'createdAt'>) => {
+    const newItem: PdfHighlight = {
+      ...item,
+      id: `hl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: new Date().toISOString(),
+    };
+    const next = upsertHighlight(resolvedHighlights, newItem);
+    try {
+      if (onSaveHighlights) {
+        await onSaveHighlights(paper, next);
+      } else {
+        await onSavePaper(paper, next);
+      }
+      setInlineFeedback(`Saved highlight (${next.length})`);
+      setTimeout(() => setInlineFeedback(null), 2000);
+    } catch (err: unknown) {
+      setInlineFeedback((err as Error).message || 'Could not save highlight.');
+    }
+  };
+
   const bibtexText = paperToBibtex(paper);
   const isInspireOnly = paper.id.startsWith('inspire:');
   const docTypeTags = mapInspireDocumentTypesToTags(paper.documentTypes, paper.comment);
-  const inlinePdfUrl = `${buildPdfEndpointUrl(paper, { view: true, save: true })}#toolbar=1&navpanes=0&view=FitH`;
+  const inlinePdfUrl = buildPdfEndpointUrl(paper, { view: true, save: true });
 
   return (
     <>
@@ -164,11 +203,11 @@ export function PaperReaderPanel({
             <button
               type="button"
               onClick={() => setPreviewModalOpen(true)}
-              title="Open full document viewer"
+              title="Open full document & highlight viewer"
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
             >
               <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Viewer</span>
+              <span>Highlight Studio</span>
             </button>
             <button
               type="button"
@@ -198,6 +237,11 @@ export function PaperReaderPanel({
             <span>· Published {paper.published.slice(0, 10)}</span>
             {'pdfCached' in paper && paper.pdfCached && (
               <span className="text-emerald-700">· PDF cached</span>
+            )}
+            {resolvedHighlights.length > 0 && (
+              <span className="text-amber-700">
+                · {resolvedHighlights.length} highlight{resolvedHighlights.length === 1 ? '' : 's'}
+              </span>
             )}
           </div>
 
@@ -243,7 +287,11 @@ export function PaperReaderPanel({
               className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-1.5 text-xs font-medium text-blue-800 transition-colors hover:bg-blue-100 whitespace-nowrap shrink-0"
             >
               <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Preview PDF</span>
+              <span>
+                {resolvedHighlights.length > 0
+                  ? `Preview PDF (${resolvedHighlights.length})`
+                  : 'Preview PDF'}
+              </span>
             </button>
 
             <button
@@ -306,10 +354,7 @@ export function PaperReaderPanel({
             </button>
             <button
               type="button"
-              onClick={() => {
-                setPdfFrameLoaded(false);
-                setActiveSubView('pdf');
-              }}
+              onClick={() => setActiveSubView('pdf')}
               className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
                 activeSubView === 'pdf'
                   ? 'bg-white text-slate-900 shadow-xs'
@@ -404,40 +449,78 @@ export function PaperReaderPanel({
           {activeSubView === 'pdf' && (
             <div className="mt-4 space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-slate-600">Inline PDF Preview</span>
                 <div className="flex items-center gap-1.5">
-                  <a
-                    href={paper.pdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                    <span>Open PDF</span>
-                  </a>
+                  <div className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setInlineTool('highlight_text')}
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium ${
+                        inlineTool === 'highlight_text'
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Highlighter className="h-3 w-3" aria-hidden="true" />
+                      <span>Text</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInlineTool('highlight_area')}
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium ${
+                        inlineTool === 'highlight_area'
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <SquareDashedMousePointer className="h-3 w-3" aria-hidden="true" />
+                      <span>Box</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {(['amber', 'emerald', 'sky', 'rose'] as PdfHighlightColor[]).map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setInlineColor(color)}
+                        aria-label={`Inline highlight color ${HIGHLIGHT_PALETTE[color].label}`}
+                        className={`h-4 w-4 rounded-full border ${
+                          HIGHLIGHT_PALETTE[color].swatchClass
+                        } ${inlineColor === color ? 'ring-2 ring-slate-900 ring-offset-1' : 'opacity-70 hover:opacity-100'}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {inlineFeedback && (
+                    <span className="text-[11px] font-medium text-emerald-700">
+                      {inlineFeedback}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => setPreviewModalOpen(true)}
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-50 whitespace-nowrap"
                   >
                     <Maximize2 className="h-3 w-3" aria-hidden="true" />
-                    <span>Expand Full Reader</span>
+                    <span>Expand Studio</span>
                   </button>
                 </div>
               </div>
-              <div className="relative h-[460px] overflow-hidden rounded-lg border border-slate-200 bg-slate-800">
-                {!pdfFrameLoaded && (
-                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-300">
-                    <Loader2 className="h-5 w-5 animate-spin text-blue-400" aria-hidden="true" />
-                    <span className="text-xs">Loading PDF document...</span>
-                  </div>
-                )}
-                <iframe
+
+              <div className="h-[460px] overflow-hidden rounded-lg border border-slate-200 bg-slate-800">
+                <PdfCanvasViewer
                   key={paper.id}
-                  src={inlinePdfUrl}
-                  title={`Inline PDF preview for ${paper.title}`}
-                  onLoad={() => setPdfFrameLoaded(true)}
-                  className="h-full w-full border-0"
+                  pdfUrl={inlinePdfUrl}
+                  externalFallbackUrl={paper.pdfUrl}
+                  highlights={resolvedHighlights}
+                  toolMode={inlineTool}
+                  activeColor={inlineColor}
+                  zoom={1}
+                  compact={true}
+                  onAddHighlight={handleInlineAddHighlight}
+                  onSelectHighlight={() => setPreviewModalOpen(true)}
                 />
               </div>
             </div>
@@ -498,8 +581,10 @@ export function PaperReaderPanel({
         paper={paper}
         open={previewModalOpen}
         isSaved={isSaved}
+        savedHighlights={resolvedHighlights}
         onClose={() => setPreviewModalOpen(false)}
         onSavePaper={onSavePaper}
+        onSaveHighlights={onSaveHighlights}
         onSyncZotero={onSyncZotero}
         onSearchAuthorInArxiv={onSearchAuthorInArxiv}
         onSearchAuthorInInspire={onSearchAuthorInInspire}

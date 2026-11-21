@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { triggerPaperPdfDownload } from '../shared/download';
 import { formatBytes } from '../shared/network';
-import type { ArxivPaper, SavedPaper } from '../shared/types';
+import type { ArxivPaper, PdfHighlight, SavedPaper } from '../shared/types';
 import { AuthorLinkList } from './AuthorLinkList';
 import { PaperReaderPanel } from './PaperReaderPanel';
 
@@ -19,6 +19,7 @@ interface LibraryViewProps {
   selectedPaper: ArxivPaper | SavedPaper | null;
   onSelectPaper: (paper: ArxivPaper | SavedPaper | null) => void;
   onUpdatePaperMeta: (id: string, tags: string[], notes: string) => Promise<void>;
+  onSaveHighlights?: (paper: ArxivPaper, highlights: PdfHighlight[]) => Promise<void>;
   onDeletePaper: (id: string) => Promise<void>;
   onSyncZotero: (paper: ArxivPaper) => Promise<void>;
   onGoToSearch: () => void;
@@ -31,6 +32,7 @@ export function LibraryView({
   selectedPaper,
   onSelectPaper,
   onUpdatePaperMeta,
+  onSaveHighlights,
   onDeletePaper,
   onSyncZotero,
   onGoToSearch,
@@ -223,6 +225,11 @@ export function LibraryView({
                             · PDF cached{paper.pdfSizeBytes ? ` (${formatBytes(paper.pdfSizeBytes)})` : ''}
                           </span>
                         )}
+                        {paper.highlights && paper.highlights.length > 0 && (
+                          <span className="text-amber-700">
+                            · {paper.highlights.length} highlight{paper.highlights.length === 1 ? '' : 's'}
+                          </span>
+                        )}
                         {paper.zoteroItemKey && (
                           <span className="text-emerald-700">
                             · Zotero synced ({paper.zoteroItemKey})
@@ -258,6 +265,25 @@ export function LibraryView({
                         <p className="mt-1.5 text-xs leading-relaxed text-slate-700">
                           {paper.notes}
                         </p>
+                      )}
+
+                      {paper.highlights && paper.highlights.length > 0 && !isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectPaper(paper)}
+                          className="mt-2 block w-full border-l-2 border-amber-400 pl-2.5 text-left text-[11px] leading-relaxed text-slate-600 hover:border-blue-600 hover:text-slate-900"
+                        >
+                          <span className="font-mono text-[10px] font-semibold text-amber-800">
+                            p.{paper.highlights[0].page}
+                          </span>{' '}
+                          &ldquo;{paper.highlights[0].quote.slice(0, 140)}
+                          {paper.highlights[0].quote.length > 140 ? '…' : ''}&rdquo;
+                          {paper.highlights.length > 1 && (
+                            <span className="ml-1 font-medium text-blue-700">
+                              (+{paper.highlights.length - 1} more)
+                            </span>
+                          )}
+                        </button>
                       )}
 
                       {isEditing && (
@@ -386,8 +412,19 @@ export function LibraryView({
       <PaperReaderPanel
         paper={selectedPaper}
         isSaved={true}
+        savedHighlights={
+          selectedPaper
+            ? papers.find((p) => p.id === selectedPaper.id)?.highlights ??
+              ('highlights' in selectedPaper ? selectedPaper.highlights : undefined)
+            : undefined
+        }
         onClose={() => onSelectPaper(null)}
-        onSavePaper={async () => {}}
+        onSavePaper={async (p, hl) => {
+          if (hl && onSaveHighlights) {
+            await onSaveHighlights(p, hl);
+          }
+        }}
+        onSaveHighlights={onSaveHighlights}
         onSyncZotero={onSyncZotero}
         onSearchAuthorInArxiv={onSearchAuthorInArxiv}
         onSearchAuthorInInspire={onSearchAuthorInInspire}

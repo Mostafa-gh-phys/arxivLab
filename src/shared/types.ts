@@ -30,10 +30,31 @@ export interface ArxivPaper {
   authorDetails?: AuthorDetail[];
 }
 
+export type PdfHighlightColor = 'amber' | 'emerald' | 'sky' | 'rose';
+
+export interface PdfHighlightRect {
+  x: number; // normalized 0..1 relative to page width
+  y: number; // normalized 0..1 relative to page height
+  width: number; // normalized 0..1
+  height: number; // normalized 0..1
+}
+
+export interface PdfHighlight {
+  id: string;
+  page: number; // 1-indexed
+  color: PdfHighlightColor;
+  kind: 'text' | 'area';
+  rects: PdfHighlightRect[];
+  quote: string;
+  note: string;
+  createdAt: string;
+}
+
 export interface SavedPaper extends ArxivPaper {
   savedAt: string;
   tags: string[];
   notes: string;
+  highlights?: PdfHighlight[];
   zoteroItemKey?: string;
   zoteroSyncedAt?: string;
   fullTextCached?: boolean;

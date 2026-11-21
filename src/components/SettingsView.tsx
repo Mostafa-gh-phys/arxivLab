@@ -474,15 +474,15 @@ export function SettingsView() {
         </div>
       </section>
 
-      {/* Group 3: Android Phone App & Google Play (.apk / .aab + PWA) */}
+      {/* Group 3: Android Phone App (.apk + PWA) */}
       <section aria-labelledby="android-heading" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 px-1">
           <div>
             <h2 id="android-heading" className="text-base font-semibold text-slate-900">
-              Android Phone App &amp; Google Play (.apk / .aab / PWA)
+              Android Phone App (.apk / PWA)
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Install directly onto any Android phone as an app or package a Google Play App Bundle (.aab) via Capacitor.
+              Install directly onto any Android phone via sideloaded APK or one-tap browser PWA install.
             </p>
           </div>
           <PWAInstallButton />
@@ -494,10 +494,10 @@ export function SettingsView() {
               <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
               <div>
                 <p className="text-xs font-semibold text-slate-900">
-                  Android APK &amp; Google Play App Bundle (.aab)
+                  Android Installable Package (.apk)
                 </p>
                 <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                  Targets: arXivLab-2.0.0-android.apk · arXivLab-2.0.0-playstore.aab
+                  Target: release/arXivLab-2.0.0-android.apk
                 </p>
               </div>
             </div>
@@ -521,11 +521,12 @@ export function SettingsView() {
           </div>
 
           <div className="bg-[#fafafa] px-5 py-3.5 text-xs leading-relaxed text-slate-600">
-            On Android browsers (Chrome/Edge), tap <strong className="text-slate-800">Install App</strong> or
-            &ldquo;Add to Home Screen&rdquo; to launch arXivLab standalone offline/online. To publish on Google Play,
-            run the GitHub Actions <span className="font-mono text-slate-800">build-android.yml</span> workflow
-            (or <span className="font-mono text-slate-800">npm run dist:android</span>) and upload the signed{' '}
-            <span className="font-mono">.aab</span> bundle in your Google Play Console (see{' '}
+            On Android browsers (Chrome/Edge), tap <strong className="text-slate-800">Install App</strong> to install the PWA instantly. To generate the standalone native{' '}
+            <span className="font-mono text-slate-800">.apk</span>, run{' '}
+            <strong className="text-slate-800">Actions &rarr; Build Android APK</strong> (
+            <span className="font-mono text-slate-800">build-android.yml</span>) on GitHub to download{' '}
+            <span className="font-mono">arXivLab-2.0.0-android.apk</span> or save it under{' '}
+            <span className="font-mono">apk/arXivLab-android.apk</span> in the repository (see{' '}
             <span className="font-mono">ANDROID_PLAY_STORE.md</span>).
           </div>
         </div>

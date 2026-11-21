@@ -1,20 +1,20 @@
-name: Build Android App (APK & Google Play AAB)
+name: Build Android APK
 
 on:
   workflow_dispatch:
     inputs:
       publish_github_release:
-        description: 'Attach Android APK & AAB to a GitHub Release'
+        description: 'Publish Android .apk to GitHub Releases'
         type: boolean
         required: false
         default: true
       release_tag:
-        description: 'GitHub Release tag (e.g. v2.0-android or v2.0)'
+        description: 'GitHub Release tag for Android APK'
         type: string
         required: false
         default: 'v2.0-android'
-      upload_to_play_internal:
-        description: 'Upload signed .aab directly to Google Play Internal Testing track (requires secrets)'
+      commit_apk_to_repo:
+        description: 'Also save arXivLab-android.apk inside apk/ folder of repository'
         type: boolean
         required: false
         default: false
@@ -39,28 +39,24 @@ jobs:
           java-version: '21'
       - uses: android-actions/setup-android@v3
 
-      - run: npm install
-      - run: npm install --no-save @capacitor/cli @capacitor/android @capacitor/assets
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install --no-save @capacitor/cli @capacitor/android
 
-      - name: Decode Android Upload Keystore & Play Credentials (if configured)
+      - name: Decode Android Keystore (optional)
         id: keystore
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          PLAY_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > /tmp/arxivlab-release.jks
             echo "keystore_path=/tmp/arxivlab-release.jks" >> "$GITHUB_OUTPUT"
           else
-            echo "No ANDROID_KEYSTORE_BASE64 secret configured; building unsigned AAB + debug APK."
-          fi
-          if [ -n "$PLAY_JSON" ]; then
-            echo "has_play_sa=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_play_sa=false" >> "$GITHUB_OUTPUT"
+            echo "Building directly installable Android APK without release keystore."
           fi
 
-      - name: Build Android APK & Google Play AAB
+      - name: Build Android APK
         env:
           ANDROID_KEYSTORE_PATH: ${{ steps.keystore.outputs.keystore_path }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -70,25 +66,21 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: arxivlab-android-bundle
-          path: |
-            release/*.apk
-            release/*.aab
+          name: arxivlab-android-apk
+          path: release/*.apk
 
-      - name: Upload to Google Play Internal Testing (optional)
-        if: >-
-          success() &&
-          github.event_name == 'workflow_dispatch' &&
-          inputs.upload_to_play_internal == true &&
-          steps.keystore.outputs.keystore_path != '' &&
-          steps.keystore.outputs.has_play_sa == 'true'
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
-          packageName: org.arxivlab.workstation
-          releaseFiles: release/*.aab
-          track: internal
-          status: completed
+      - name: Commit APK to repository (optional)
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.commit_apk_to_repo == true
+        run: |
+          mkdir -p apk
+          cp -f release/*.apk apk/arXivLab-android.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apk/arXivLab-android.apk
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update Android APK binary"
+            git push
+          fi
 
       - name: Publish Android Release on GitHub
         if: success() && (startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_github_release != false))
@@ -125,9 +117,9 @@ jobs:
           fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/*.apk release/*.aab --clobber
+            gh release upload "$TAG" release/*.apk --clobber
           else
-            gh release create "$TAG" release/*.apk release/*.aab \
+            gh release create "$TAG" release/*.apk \
               --target "$TARGET_SHA" \
               --title "arXivLab Android $TAG" \
               --generate-notes
